@@ -9,6 +9,7 @@ use crate::activity::{
 };
 use crate::config::AppConfig;
 use crate::federation::discovery::webfinger;
+use crate::observability::metrics::metrics_handler;
 
 #[silent_openapi::endpoint(summary = "健康检查", description = "返回服务状态与本地时间")]
 async fn health(_req: Request) -> Result<Response> {
@@ -30,6 +31,7 @@ pub fn build_routes(cfg: AppConfig) -> Route {
     }));
 
     root.append(Route::new("health").get(health))
+        .append(Route::new("metrics").get(metrics_handler))
         .append(Route::new(".well-known").append(Route::new("webfinger").get(webfinger)))
         .append(
             Route::new("users").append(

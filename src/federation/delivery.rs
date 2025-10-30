@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::observability::metrics::record_delivery;
 use chrono::Local;
 use std::time::Duration;
 use tracing::info;
@@ -133,8 +134,10 @@ pub async fn deliver_activity_http(
     let elapsed_ms = start.elapsed().as_millis() as u64;
     if status.is_success() || status == HyperStatus::ACCEPTED {
         info!(target:"delivery", %inbox_url, %elapsed_ms, status=%status.as_u16(), "deliver ok");
+        record_delivery("http", true, status.as_u16(), elapsed_ms);
         Ok(())
     } else {
+        record_delivery("http", false, status.as_u16(), elapsed_ms);
         anyhow::bail!("deliver failed: {}", status)
     }
 }
@@ -206,13 +209,20 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
         match result {
             Ok((status, elapsed)) if status.is_success() || status == HyperStatus::ACCEPTED => {
                 info!(target:"delivery", %inbox_url, elapsed_ms=%elapsed.as_millis(), status=%status.as_u16(), attempt, "deliver ok");
+                let scheme = if is_https { "https" } else { "http" };
+                record_delivery(scheme, true, status.as_u16(), elapsed.as_millis() as u64);
                 return Ok(());
             }
             Ok((status, elapsed)) => {
                 info!(target:"delivery", %inbox_url, elapsed_ms=%elapsed.as_millis(), status=%status.as_u16(), attempt, "deliver failed, retrying if allowed");
+                let scheme = if is_https { "https" } else { "http" };
+                record_delivery(scheme, false, status.as_u16(), elapsed.as_millis() as u64);
             }
             Err(e) => {
                 info!(target:"delivery", %inbox_url, attempt, error=%format!("{e:#}").as_str(), "deliver error, retrying if allowed");
+                let scheme = if is_https { "https" } else { "http" };
+                // 记录为 code=0 的异常
+                record_delivery(scheme, false, 0, start.elapsed().as_millis() as u64);
             }
         }
 
