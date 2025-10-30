@@ -119,6 +119,19 @@ curl --max-time 8 -s \
   "http://127.0.0.1:8080/.well-known/webfinger?resource=acct:alice@localhost" | jq
 ```
 
+- Host-Meta（联邦发现）
+
+```bash
+curl --max-time 5 -i http://127.0.0.1:8080/.well-known/host-meta
+```
+
+- NodeInfo（节点信息）
+
+```bash
+curl --max-time 5 -s http://127.0.0.1:8080/.well-known/nodeinfo | jq
+curl --max-time 5 -s http://127.0.0.1:8080/nodeinfo/2.1 | jq
+```
+
 - Actor Profile 获取（ActivityStreams 示例）
 
 ```bash

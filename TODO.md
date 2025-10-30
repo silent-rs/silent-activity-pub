@@ -42,6 +42,12 @@
   - 验证：`curl --max-time 5 -I http://127.0.0.1:8080/docs/openapi.json`
   - 分支建议：`chore/openapi-docs`
 
+- 联邦发现增强（Host-Meta & NodeInfo）
+  - 内容：`GET /.well-known/host-meta` 返回 LRDD；`GET /.well-known/nodeinfo` 与 `GET /nodeinfo/2.1`
+  - 完成标准：cURL 可获取 XML/JSON；OpenAPI 注解完成
+  - 验证：`curl -i /.well-known/host-meta`、`curl -s /.well-known/nodeinfo|jq`、`curl -s /nodeinfo/2.1|jq`
+  - 分支建议：`feature/discovery-nodeinfo-hostmeta`
+
 ---
 
 ## P0 · 框架与规范统一
