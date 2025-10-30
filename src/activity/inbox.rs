@@ -22,8 +22,10 @@ pub async fn inbox(_req: Request) -> Result<Response> {
         // 校验 Date 偏移
         if !verify_date_skew(req.headers(), cfg_owned.sign_max_skew_sec) {
             record_inbound("inbox", "unauthorized");
-            let mut res = Response::empty();
-            res.set_status(StatusCode::UNAUTHORIZED);
+            let res = crate::utils::http::unauthorized_with_authenticate(
+                "invalid_date",
+                "Date header skew too large",
+            );
             return Ok(res);
         }
         // 如果带有 Digest 头，进行校验（SHA-256）
@@ -63,8 +65,11 @@ pub async fn inbox(_req: Request) -> Result<Response> {
                 let got = general_purpose::STANDARD.encode(hasher.finalize());
                 if got != expected {
                     record_inbound("inbox", "bad_digest");
-                    let mut res = Response::empty();
-                    res.set_status(StatusCode::BAD_REQUEST);
+                    let res = crate::utils::http::json_error(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_digest",
+                        "Digest header verification failed",
+                    );
                     return Ok(res);
                 }
             }
@@ -75,16 +80,31 @@ pub async fn inbox(_req: Request) -> Result<Response> {
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or("/");
-        let ok = verify_hmac_sha256_headers(
-            req.headers(),
-            &method,
-            path_q,
-            &cfg_owned.sign_shared_secret,
-        );
+        // 1) 若配置了 shared secret，则优先使用 HMAC 验签；否则尝试 hs2019(RSA)
+        let ok = if !cfg_owned.sign_shared_secret.is_empty() {
+            verify_hmac_sha256_headers(
+                req.headers(),
+                &method,
+                path_q,
+                &cfg_owned.sign_shared_secret,
+                cfg_owned.sign_max_skew_sec,
+            )
+        } else {
+            // 动态选择 hs2019 验签：RSA 或 Ed25519，依据 key 文档/algorithm
+            crate::auth::http_sign::verify_hs2019_auto_headers_async(
+                req.headers(),
+                &method,
+                path_q,
+                cfg_owned.sign_max_skew_sec,
+            )
+            .await
+        };
         record_inbound("inbox", if ok { "ok" } else { "unauthorized" });
         if !ok {
-            let mut res = Response::empty();
-            res.set_status(StatusCode::UNAUTHORIZED);
+            let res = crate::utils::http::unauthorized_with_authenticate(
+                "invalid_signature",
+                "Signature verification failed",
+            );
             return Ok(res);
         }
     } else {

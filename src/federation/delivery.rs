@@ -190,6 +190,32 @@ pub fn build_delivery_from_config(cfg: &AppConfig) -> DynDelivery {
     )
 }
 
+fn choose_signer(cfg: &AppConfig) -> Box<dyn HttpSigner> {
+    match cfg.sign_alg.to_lowercase().as_str() {
+        "rsa" => {
+            if !cfg.sign_priv_key_path.is_empty() {
+                if let Ok(pem) = std::fs::read_to_string(&cfg.sign_priv_key_path) {
+                    if let Ok(s) = RsaSha256Signer::from_pkcs8_pem(&pem) {
+                        return Box::new(s);
+                    }
+                }
+            }
+            Box::new(HmacSha256Signer)
+        }
+        "ed25519" => {
+            if !cfg.sign_priv_key_path.is_empty() {
+                if let Ok(pem) = std::fs::read_to_string(&cfg.sign_priv_key_path) {
+                    if let Ok(s) = Ed25519Signer::from_pkcs8_pem(&pem) {
+                        return Box::new(s);
+                    }
+                }
+            }
+            Box::new(HmacSha256Signer)
+        }
+        _ => Box::new(HmacSha256Signer),
+    }
+}
+
 /// 使用 Hyper 发送带签名的 HTTP POST（当前仅支持 http，不含 TLS）
 pub async fn deliver_activity_http(
     cfg: &AppConfig,
@@ -197,7 +223,7 @@ pub async fn deliver_activity_http(
     body: &str,
 ) -> anyhow::Result<()> {
     let start = Instant::now();
-    let signer = HmacSha256Signer;
+    let signer = choose_signer(cfg);
     let sign = signer.sign(SignInput {
         method: "post",
         path_and_query: inbox_url,
@@ -259,7 +285,7 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                 .build();
             let client = Client::builder(TokioExecutor::new()).build(https);
 
-            let signer = HmacSha256Signer;
+            let signer = choose_signer(cfg);
             let sign = signer.sign(SignInput {
                 method: "post",
                 path_and_query: inbox_url,
@@ -292,7 +318,7 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
             http.enforce_http(true);
             let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build(http);
 
-            let signer = HmacSha256Signer;
+            let signer = choose_signer(cfg);
             let sign = signer.sign(SignInput {
                 method: "post",
                 path_and_query: inbox_url,

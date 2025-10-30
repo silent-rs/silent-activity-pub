@@ -165,16 +165,35 @@ open http://127.0.0.1:8080/docs || true
 
 ---
 
-## 签名与投递（Phase VII-B 预览）
+## 签名与投递（Phase VII-B 进展）
 
-- 环境变量（可选）：
-  - `AP_SIGN_ENABLE=true` 开启占位签名（HMAC-SHA256）
-  - `AP_SIGN_KEY_ID=local#main` 指定 keyId
-  - `AP_SIGN_SECRET=your-secret` 设置共享密钥
-  - `AP_SIGN_MAX_SKEW_SEC=300` 允许的 Date 头时间偏移（秒）
-  - `AP_BACKOFF_BASE_MS=500`、`AP_BACKOFF_MAX_MS=10000`、`AP_BACKOFF_MAX_RETRIES=3` 配置退避策略
-- 当前实现为占位签名与日志型投递（不发送网络请求），用于联调与埋点验证
-- 后续将引入真实 HTTP Signatures 与可靠投递（含重试、去重、指标）
+- 入站验签
+  - 支持 HMAC-SHA256 与 hs2019（RSA/Ed25519），优先使用共享密钥 HMAC；否则自动根据 key 文档类型选择 RSA 或 Ed25519
+  - 完整解析 `Signature` 头：`keyId`、`algorithm`、`headers`、`signature`、`created`、`expires`
+  - 签名串依据 `headers` 顺序构造，支持伪头 `(request-target)`、`(created)`、`(expires)`
+  - 强校验时间：允许的时间偏移由 `AP_SIGN_MAX_SKEW_SEC` 控制（对 `created`/`expires` 生效）
+  - 错误响应统一：当验签失败或日期无效时，返回 JSON 错误体，并设置 `WWW-Authenticate: Signature ...`
+
+- 出站签名与投递
+  - 签名算法动态选择：由 `AP_SIGN_ALG=hmac|rsa|ed25519` 与 `AP_SIGN_PRIV_KEY_PATH=<PEM>` 控制；缺省回退到 HMAC
+  - 每次投递自动附带 `Idempotency-Key`（正文 SHA256 的 Base64）
+  - 支持 http/https 通道；指数退避重试由 `AP_BACKOFF_*` 参数控制
+
+- 相关环境变量
+  - `AP_SIGN_ENABLE=true` 开启签名（默认仅在需要的端点使用）
+  - `AP_SIGN_ALG=hmac|rsa|ed25519` 出站签名算法
+  - `AP_SIGN_PRIV_KEY_PATH=/path/to/key.pem` 当 `rsa/ed25519` 时必需（PKCS#8 私钥）
+  - `AP_SIGN_KEY_ID=local#main` 发送时使用的 keyId
+  - `AP_SIGN_SECRET=your-secret` HMAC 共享密钥
+  - `AP_SIGN_MAX_SKEW_SEC=300` 允许的时间偏移（用于 Date/created/expires）
+  - `AP_BACKOFF_BASE_MS=500`、`AP_BACKOFF_MAX_MS=10000`、`AP_BACKOFF_MAX_RETRIES=3` 退避策略
+
+- 错误响应规范
+  - 401 UNAUTHORIZED：
+    - 头：`WWW-Authenticate: Signature realm="activitypub", error="<code>", error_description="<desc>"`
+    - 体：`{"error":"<code>","error_description":"<desc>"}`
+    - 常见 code：`invalid_date`、`invalid_signature`
+  - 400 BAD REQUEST：Digest 校验失败时返回 `invalid_digest`
 
 
 ## 配置与运行
