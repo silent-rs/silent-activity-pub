@@ -2,7 +2,11 @@ use chrono::Local;
 use silent::prelude::*;
 use silent::{Configs, Request, Response, Result};
 
-use crate::activity::{inbox::inbox, models::actor, outbox::outbox};
+use crate::activity::{
+    inbox::inbox,
+    models::actor,
+    outbox::{outbox, outbox_post},
+};
 use crate::config::AppConfig;
 use crate::federation::discovery::webfinger;
 
@@ -31,7 +35,7 @@ pub fn build_routes(cfg: AppConfig) -> Route {
             Route::new("users").append(
                 Route::new("<name:str>")
                     .get(actor)
-                    .append(Route::new("outbox").get(outbox))
+                    .append(Route::new("outbox").get(outbox).post(outbox_post))
                     .append(Route::new("inbox").post(inbox)),
             ),
         )

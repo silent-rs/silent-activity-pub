@@ -70,6 +70,15 @@
   - 完成标准：日志输出包含签名信息与重试策略配置
   - 分支建议：`feature/phase-vii-b-prep`
 
+---
+
+## P1 · 投递集成（outbox POST 占位）
+
+- Outbox POST 占位
+  - 内容：`POST /users/<name>/outbox`，请求体 `{ inbox, activity }`，调用出站投递（日志）
+  - 完成标准：返回 `{ status: "queued" }`，日志包含签名信息
+  - 分支建议：`feature/phase-vii-b-signatures`
+
 ## 注意
 
 - 本阶段不引入签名校验、不做分发重试与队列

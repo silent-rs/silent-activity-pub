@@ -34,11 +34,18 @@ pub trait OutboundDelivery: Send + Sync {
 pub struct LoggingDelivery<S: HttpSigner = PlaceholderSigner> {
     signer: S,
     backoff: BackoffPolicy,
+    key_id: String,
+    shared_secret: String,
 }
 
 impl<S: HttpSigner> LoggingDelivery<S> {
-    pub fn new(signer: S, backoff: BackoffPolicy) -> Self {
-        Self { signer, backoff }
+    pub fn new(signer: S, backoff: BackoffPolicy, key_id: String, shared_secret: String) -> Self {
+        Self {
+            signer,
+            backoff,
+            key_id,
+            shared_secret,
+        }
     }
 }
 
@@ -48,9 +55,9 @@ impl<S: HttpSigner + Send + Sync> OutboundDelivery for LoggingDelivery<S> {
         let sign = self.signer.sign(SignInput {
             method: "post",
             path_and_query: inbox_url,
-            key_id: "local#main",
+            key_id: &self.key_id,
             private_key_pem: None,
-            shared_secret: Some("dev-secret"),
+            shared_secret: Some(&self.shared_secret),
         });
         info!(
             target: "delivery",
@@ -75,5 +82,10 @@ pub fn build_delivery_from_config(cfg: &AppConfig) -> LoggingDelivery<HmacSha256
         max_retries: cfg.backoff_max_retries,
     };
     let _ = signer.algorithm();
-    LoggingDelivery::new(signer, backoff)
+    LoggingDelivery::new(
+        signer,
+        backoff,
+        cfg.sign_key_id.clone(),
+        cfg.sign_shared_secret.clone(),
+    )
 }
