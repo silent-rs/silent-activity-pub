@@ -1,7 +1,17 @@
 [package]
 name = "silent-activity-pub"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 silent = { path = "./silent/silent" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# scru128 暂不在 MVP 接口中直接生成，保留依赖以便后续使用
+scru128 = "3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
+silent-openapi = { path = "./silent/silent-openapi" }
+tokio = { version = "1", features = ["full"] }
+anyhow = { version = "1" }
