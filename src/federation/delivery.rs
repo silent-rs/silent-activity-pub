@@ -5,6 +5,12 @@ use tracing::info;
 
 use crate::auth::http_sign::{HmacSha256Signer, HttpSigner, PlaceholderSigner, SignInput};
 use crate::config::AppConfig;
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper::{Request as HyperRequest, StatusCode as HyperStatus};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::TokioExecutor;
+use std::time::Instant;
 
 /// 重试与退避策略
 #[derive(Clone, Debug)]
@@ -88,4 +94,45 @@ pub fn build_delivery_from_config(cfg: &AppConfig) -> LoggingDelivery<HmacSha256
         cfg.sign_key_id.clone(),
         cfg.sign_shared_secret.clone(),
     )
+}
+
+/// 使用 Hyper 发送带签名的 HTTP POST（当前仅支持 http，不含 TLS）
+pub async fn deliver_activity_http(
+    cfg: &AppConfig,
+    inbox_url: &str,
+    body: &str,
+) -> anyhow::Result<()> {
+    let start = Instant::now();
+    let signer = HmacSha256Signer;
+    let sign = signer.sign(SignInput {
+        method: "post",
+        path_and_query: inbox_url,
+        key_id: &cfg.sign_key_id,
+        private_key_pem: None,
+        shared_secret: Some(&cfg.sign_shared_secret),
+    });
+
+    // 仅支持 http（非 https）
+    let mut http = HttpConnector::new();
+    http.enforce_http(true);
+    let client = Client::builder(TokioExecutor::new()).build(http);
+
+    let req: HyperRequest<Full<Bytes>> = HyperRequest::post(inbox_url)
+        .header(http::header::CONTENT_TYPE, "application/activity+json")
+        .header(http::header::DATE, sign.date)
+        .header(
+            http::header::HeaderName::from_static("signature"),
+            sign.signature,
+        )
+        .body(Full::from(Bytes::from(body.to_owned())))?;
+
+    let resp = client.request(req).await?;
+    let status = resp.status();
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    if status.is_success() || status == HyperStatus::ACCEPTED {
+        info!(target:"delivery", %inbox_url, %elapsed_ms, status=%status.as_u16(), "deliver ok");
+        Ok(())
+    } else {
+        anyhow::bail!("deliver failed: {}", status)
+    }
 }

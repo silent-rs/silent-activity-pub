@@ -17,5 +17,10 @@ async-trait = "0.1"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+http = "1"
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "http2", "tokio"] }
+http-body-util = "0.1"
+bytes = "1"
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1" }

@@ -3,7 +3,9 @@ use serde_json::{json, Value};
 use silent::{header, Request, Response, Result, StatusCode};
 
 use crate::config::AppConfig;
-use crate::federation::delivery::{build_delivery_from_config, OutboundDelivery};
+use crate::federation::delivery::{
+    build_delivery_from_config, deliver_activity_http, OutboundDelivery,
+};
 
 #[silent_openapi::endpoint(
     summary = "获取 Outbox",
@@ -56,9 +58,17 @@ pub async fn outbox_post(mut req: Request) -> Result<Response> {
 
     // 构造投递器
     let cfg: &AppConfig = req.get_config_uncheck();
-    let delivery = build_delivery_from_config(cfg);
     let activity_str = body.activity.to_string();
-    let _ = delivery.post_activity(&body.inbox, &activity_str).await;
+    // 若启用真实网络投递，使用 Hyper 发送，否则记录日志
+    if std::env::var("AP_DELIVERY_HTTP")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        let _ = deliver_activity_http(cfg, &body.inbox, &activity_str).await;
+    } else {
+        let delivery = build_delivery_from_config(cfg);
+        let _ = delivery.post_activity(&body.inbox, &activity_str).await;
+    }
 
     let mut res = Response::json(&json!({"status":"queued"}));
     res.headers_mut().insert(
