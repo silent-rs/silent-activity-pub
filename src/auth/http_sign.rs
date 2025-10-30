@@ -1,12 +1,24 @@
 #![allow(dead_code)]
 use base64::{engine::general_purpose, Engine as _};
+use bytes::Bytes;
 use chrono::Local;
 use ed25519_dalek::Signer as _;
 use hmac::{Hmac, Mac};
+use http_body_util::BodyExt;
+use hyper::{Request as HyperRequest, StatusCode};
+use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::TokioExecutor;
+use lru::LruCache;
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
+use rsa::pkcs8::DecodePublicKey;
+use rsa::RsaPublicKey;
 use sha2::Sha256;
 use silent::header;
 use silent::header::HeaderValue;
 use silent::headers::HeaderMap;
+use std::num::NonZeroUsize;
 
 /// HTTP 签名算法
 #[derive(Clone, Copy, Debug)]
@@ -272,4 +284,140 @@ pub fn verify_date_skew(headers: &HeaderMap, max_skew_sec: u64) -> bool {
     let now = chrono::Utc::now().timestamp();
     let skew = (now - sent).unsigned_abs();
     skew <= max_skew_sec
+}
+
+// ========== hs2019 inbound verify (RSA) ==========
+
+static PUBKEY_CACHE: Lazy<Mutex<LruCache<String, RsaPublicKey>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
+
+async fn http_get_bytes(url: &str) -> anyhow::Result<Bytes> {
+    if url.starts_with("https://") {
+        let https = HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .expect("native roots")
+            .https_only()
+            .enable_http1()
+            .enable_http2()
+            .build();
+        let client = Client::builder(TokioExecutor::new()).build(https);
+        let req = HyperRequest::get(url)
+            .header(
+                silent::header::ACCEPT,
+                "application/activity+json, application/ld+json",
+            )
+            .body(http_body_util::Empty::<bytes::Bytes>::new())?;
+        let resp = client.request(req).await?;
+        if resp.status() != StatusCode::OK {
+            anyhow::bail!("status {}", resp.status());
+        }
+        let body = resp.into_body().collect().await?.to_bytes();
+        Ok(body)
+    } else {
+        let mut http = HttpConnector::new();
+        http.enforce_http(true);
+        let client = Client::builder(TokioExecutor::new()).build(http);
+        let req = HyperRequest::get(url)
+            .header(
+                silent::header::ACCEPT,
+                "application/activity+json, application/ld+json",
+            )
+            .body(http_body_util::Empty::<bytes::Bytes>::new())?;
+        let resp = client.request(req).await?;
+        if resp.status() != StatusCode::OK {
+            anyhow::bail!("status {}", resp.status());
+        }
+        let body = resp.into_body().collect().await?.to_bytes();
+        Ok(body)
+    }
+}
+
+async fn fetch_rsa_pubkey(key_id: &str) -> anyhow::Result<RsaPublicKey> {
+    // 尝试直接获取 keyId 文档，解析 publicKeyPem
+    let bytes = http_get_bytes(key_id).await?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let pem = if let Some(p) = v.get("publicKeyPem").and_then(|s| s.as_str()) {
+        p.to_string()
+    } else if let Some(obj) = v.get("publicKey").and_then(|o| o.as_object()) {
+        obj.get("publicKeyPem")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        "".into()
+    };
+    if pem.is_empty() {
+        anyhow::bail!("no publicKeyPem in document")
+    }
+    let pk = RsaPublicKey::from_public_key_pem(&pem)?;
+    Ok(pk)
+}
+
+pub async fn verify_hs2019_headers_async(
+    headers: &HeaderMap,
+    method: &str,
+    path_and_query: &str,
+) -> bool {
+    let sig_header = match headers.get("signature") {
+        Some(v) => v,
+        None => return false,
+    };
+    let (key_id, sig_b64) = match parse_signature_header(sig_header) {
+        Some(t) => t,
+        None => return false,
+    };
+    // try cache hit
+    if let Some(pk) = {
+        let mut c = PUBKEY_CACHE.lock();
+        c.get(&key_id).cloned()
+    } {
+        return verify_rsa_sig(headers, method, path_and_query, &sig_b64, pk);
+    }
+    // fetch without holding the lock
+    let fetched = match fetch_rsa_pubkey(&key_id).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(target="verify", error=%format!("{e:#}"), key_id=%key_id, "fetch public key failed");
+            return false;
+        }
+    };
+    {
+        let mut c2 = PUBKEY_CACHE.lock();
+        c2.put(key_id.clone(), fetched.clone());
+    }
+    verify_rsa_sig(headers, method, path_and_query, &sig_b64, fetched)
+}
+
+fn verify_rsa_sig(
+    headers: &HeaderMap,
+    method: &str,
+    path_and_query: &str,
+    sig_b64: &str,
+    pk: RsaPublicKey,
+) -> bool {
+    // build signing string
+    let date = match headers.get(header::DATE) {
+        Some(v) => v.to_str().ok().unwrap_or(""),
+        None => return false,
+    };
+    let signing_string = format!(
+        "(request-target): {} {}\ndate: {}",
+        method.to_lowercase(),
+        path_and_query,
+        date
+    );
+    // decode sig
+    let sig = match base64::engine::general_purpose::STANDARD.decode(sig_b64.as_bytes()) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    // verify pkcs1v15 sha256
+    use rsa::pkcs1v15::VerifyingKey;
+    use rsa::signature::Verifier;
+    let vk = VerifyingKey::<sha2::Sha256>::new(pk);
+    if let Ok(sig_obj) = rsa::pkcs1v15::Signature::try_from(sig.as_slice()) {
+        vk.verify(signing_string.as_bytes(), &sig_obj).is_ok()
+    } else {
+        false
+    }
 }

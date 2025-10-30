@@ -75,12 +75,18 @@ pub async fn inbox(_req: Request) -> Result<Response> {
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or("/");
-        let ok = verify_hmac_sha256_headers(
-            req.headers(),
-            &method,
-            path_q,
-            &cfg_owned.sign_shared_secret,
-        );
+        // 1) 若配置了 shared secret，则优先使用 HMAC 验签；否则尝试 hs2019(RSA)
+        let ok = if !cfg_owned.sign_shared_secret.is_empty() {
+            verify_hmac_sha256_headers(
+                req.headers(),
+                &method,
+                path_q,
+                &cfg_owned.sign_shared_secret,
+            )
+        } else {
+            crate::auth::http_sign::verify_hs2019_headers_async(req.headers(), &method, path_q)
+                .await
+        };
         record_inbound("inbox", if ok { "ok" } else { "unauthorized" });
         if !ok {
             let mut res = Response::empty();
