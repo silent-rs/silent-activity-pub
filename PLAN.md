@@ -23,6 +23,34 @@
   - inbox/outbox 基础活动收发闭环
 - 状态：规划中
 
+#### 需求拆解（接口清单）
+
+- GET `/health`
+  - 200 OK，`application/json`：`{"status":"ok","time":"<local>"}`
+- GET `/.well-known/webfinger?resource=acct:<name>@<host>`
+  - 200 OK，`application/jrd+json`
+  - `links[].rel=self`，`type=application/activity+json` 指向 Actor URL
+- GET `/users/<name>`（Actor Profile）
+  - 200 OK，`application/activity+json`
+  - 至少包含：`@context`、`id`、`type=Person`、`preferredUsername`、`inbox`、`outbox`
+- GET `/users/<name>/outbox`
+  - 200 OK，`application/activity+json`，`OrderedCollection` 空集合即可
+- POST `/users/<name>/inbox` 与 POST `/inbox`（shared inbox）
+  - 202 Accepted；不做签名校验，仅作为占位
+
+#### 非功能性约束
+
+- ID 生成：全局使用 `scru128`
+- 时间：`chrono::Local::now().naive_local()`
+- 日志：结构化日志，默认 `info`，可通过 `RUST_LOG` 调整
+- 路由：使用 Silent 路由装配，根路由统一注入配置（如 `AP_BASE_URL`）
+
+#### 验收清单（可执行场景）
+
+- 通过 curl/jq 验证 health、webfinger、actor、inbox/outbox 行为
+- HEAD 命中时对 GET 进行回退（如无专用 HEAD 处理）
+- 统一返回正确的 `Content-Type`
+
 ### Phase VII-B · 签名与可靠投递
 - 交付：HTTP Signatures、投递队列、重试与去重、基础指标
 - 验收：
