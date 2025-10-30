@@ -373,6 +373,90 @@ refactor(db): 优化对象存储抽象
   - `delivery_queue_total{backend, event}`：队列事件计数（backend: memory/sled；event: enqueued/dequeued/dropped）
   - `delivery_queue_depth`：当前队列深度（Gauge）
 
+---
+
+## 实际部署建议
+
+- 进程与用户
+  - 使用非 root 用户运行（例如专用用户 `ap`），限制只读配置与私钥权限（`chmod 600`）。
+  - 日志通过 `RUST_LOG` 控制，生产建议 `info` 或更细粒度模块化设置。
+
+- 目录与持久化
+  - 配置文件：`config/app.toml`（或通过 `AP_CONFIG` 指定绝对路径）。
+  - 数据目录：`sled_path` 指向持久化目录（例如 `/var/lib/silent-activity-pub/dedup.sled`）。
+  - 队列后端：如使用 `queue_backend = "sled"`，建议将同一 `sled_path` 放到持久化卷中。
+
+- 反向代理与 TLS
+  - 建议使用 Nginx/Caddy/Traefik 作为 TLS 终结，在其后运行本服务（`listen_addr` 为内网绑定）。
+  - 反代应透传 `Host` 与 `X-Forwarded-*` 头，并确保 `base_url` 与外部访问一致。
+
+- Systemd 示例（/etc/systemd/system/silent-activity-pub.service）
+  - 以非 root 用户/组运行，并指定工作目录与配置路径。
+
+```ini
+[Unit]
+Description=Silent ActivityPub Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ap
+Group=ap
+WorkingDirectory=/opt/silent-activity-pub
+Environment=RUST_LOG=info
+Environment=AP_CONFIG=/opt/silent-activity-pub/config/app.toml
+ExecStart=/usr/bin/env cargo run --release --bin silent-activity-pub
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- Docker 运行（示例）
+
+```Dockerfile
+FROM rust:1 as build
+WORKDIR /work
+COPY . .
+RUN cargo build --release --bin silent-activity-pub
+
+FROM debian:stable-slim
+RUN useradd -m -u 10001 ap
+WORKDIR /app
+COPY --from=build /work/target/release/silent-activity-pub /usr/local/bin/
+COPY config/app.example.toml /app/config/app.toml
+USER ap
+ENV RUST_LOG=info AP_CONFIG=/app/config/app.toml
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/silent-activity-pub"]
+```
+
+运行命令（挂载自定义配置/密钥）：
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v $(pwd)/config/app.toml:/app/config/app.toml:ro \
+  -v $(pwd)/keys:/app/keys:ro \
+  -e RUST_LOG=info \
+  ghcr.io/your-org/silent-activity-pub:latest
+```
+
+- 健康检查与监控
+  - 健康检查：`GET /health`，可用于负载均衡器探活。
+  - 指标：`GET /metrics`（Prometheus），建议采集并设置告警（如 5xx 比例、投递错误率）。
+
+- 安全与密钥
+  - 私钥文件建议使用 PKCS#8 格式，放置在只读目录并限制权限；配置文件中仅引用路径，不直接嵌入私钥内容。
+  - 定期轮换密钥，必要时通过配置变更并重启服务应用新密钥。
+
+- 配置变更与发布
+  - 当前版本不支持热重载；修改 `config/app.toml` 后需重启服务。
+  - 生产环境建议使用蓝绿/滚动发布，确保 `/health` 通过后再切换流量。
+
 ### 出站队列与 Outbox 行为
 
 - `POST /users/<name>/outbox` 行为为“入队”：
