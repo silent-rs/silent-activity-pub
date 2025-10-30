@@ -38,6 +38,16 @@ pub static INBOUND_COUNTER: Lazy<IntCounterVec> = Lazy::new(|| {
     c
 });
 
+pub static DEDUP_COUNTER: Lazy<IntCounterVec> = Lazy::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new("dedup_total", "dedup hits and misses"),
+        &["backend", "result"],
+    )
+    .unwrap();
+    REGISTRY.register(Box::new(c.clone())).ok();
+    c
+});
+
 pub fn record_delivery(scheme: &str, ok: bool, code: u16, elapsed_ms: u64) {
     let result = if ok { "ok" } else { "error" };
     DELIVERY_COUNTER
@@ -50,6 +60,10 @@ pub fn record_delivery(scheme: &str, ok: bool, code: u16, elapsed_ms: u64) {
 
 pub fn record_inbound(endpoint: &str, result: &str) {
     INBOUND_COUNTER.with_label_values(&[endpoint, result]).inc();
+}
+
+pub fn record_dedup(backend: &str, result: &str) {
+    DEDUP_COUNTER.with_label_values(&[backend, result]).inc();
 }
 
 pub async fn metrics_handler(_req: silent::Request) -> silent::Result<Response> {

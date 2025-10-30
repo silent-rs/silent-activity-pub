@@ -53,11 +53,19 @@
 
 ### Phase VII-B · 签名与可靠投递
 - 交付：HTTP Signatures、投递队列、重试与去重、基础指标
+- 已完成（进展）：
+  - 入站 hs2019（RSA/Ed25519）验签，完整 Signature 解析（含 headers/created/expires）
+  - 统一错误响应与 `WWW-Authenticate: Signature ...`
+  - 出站签名算法动态选择（HMAC/RSA/Ed25519）
+- 待办：
+  - 投递队列与重试策略完善（当前为直接重试）
+  - 去重持久化与 TTL 清理策略（sled 后端）
+  - 错误体与安全头的兼容性细化（主流实现）
 - 验收：
   - 按目标实例完成签名、回源校验与指数退避
   - 幂等与去重生效（基于活动 ID）
   - 暴露请求成功率/延迟/重试次数等指标
-- 状态：规划中
+- 状态：进行中
 
 ### Phase VII-C · 对象与媒体存储
 - 交付：Object Store 抽象、附件存储、silent-nas 集成、GC 策略

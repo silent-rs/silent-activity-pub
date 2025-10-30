@@ -66,15 +66,15 @@
 
 ## P1 · 签名与可靠投递（前置骨架）
 
-- HTTP Signatures 骨架
-  - 内容：签名/验签接口（占位实现），输出 Date/Signature 头
-  - 完成标准：可被出站投递调用，未做真实加密
-  - 分支建议：`feature/phase-vii-b-prep`
+- HTTP Signatures（进展：已完成入站验签与错误统一）
+  - 内容：签名/验签接口，完整 Signature 解析（headers/created/expires），入站支持 HMAC 与 hs2019（RSA/Ed25519）
+  - 完成标准：按 headers 构造签名串，created/expires 强校验（AP_SIGN_MAX_SKEW_SEC），错误体与 WWW-Authenticate 统一
+  - 状态：完成
 
-- 出站投递与退避策略骨架
-  - 内容：定义 BackoffPolicy 与 OutboundDelivery 接口，占位实现 LoggingDelivery
-  - 完成标准：日志输出包含签名信息与重试策略配置
-  - 分支建议：`feature/phase-vii-b-prep`
+- 出站投递与退避策略（进展：签名动态选择已完成）
+  - 内容：动态选择 HMAC/RSA/Ed25519（AP_SIGN_ALG/AP_SIGN_PRIV_KEY_PATH），附带 Idempotency-Key；http/https 直连 + 指数退避
+  - 完成标准：可配置算法与密钥；重试埋点；失败路径返回合理错误
+  - 状态：进行中（队列与更丰富的退避策略待办）
 
 ---
 
