@@ -18,6 +18,7 @@ use hyper_util::rt::TokioExecutor;
 use sha2::{Digest, Sha256};
 use std::time::Instant;
 use tokio::time::sleep;
+use tokio::time::timeout as tokio_timeout;
 
 /// 重试与退避策略
 #[derive(Clone, Debug)]
@@ -254,7 +255,11 @@ pub async fn deliver_activity_http(
         )
         .body(Full::from(Bytes::from(body.to_owned())))?;
 
-    let resp = client.request(req).await?;
+    let req_timeout_ms: u64 = std::env::var("AP_HTTP_TIMEOUT_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(10_000);
+    let resp = tokio_timeout(Duration::from_millis(req_timeout_ms), client.request(req)).await??;
     let status = resp.status();
     let elapsed_ms = start.elapsed().as_millis() as u64;
     if status.is_success() || status == HyperStatus::ACCEPTED {
@@ -310,8 +315,17 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                     idem,
                 )
                 .body(Full::from(Bytes::from(body.to_owned())))?;
-            let resp = client.request(req).await;
-            resp.map(|r| (r.status(), start.elapsed()))
+            let req_timeout_ms: u64 = std::env::var("AP_HTTP_TIMEOUT_MS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(10_000);
+            let resp =
+                tokio_timeout(Duration::from_millis(req_timeout_ms), client.request(req)).await;
+            match resp {
+                Ok(Ok(r)) => Ok((r.status(), start.elapsed())),
+                Ok(Err(e)) => Err(e),
+                Err(_) => Ok((HyperStatus::REQUEST_TIMEOUT, start.elapsed())),
+            }
         } else {
             // http 客户端（明文）
             let mut http = HttpConnector::new();
@@ -343,8 +357,17 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                     idem,
                 )
                 .body(Full::from(Bytes::from(body.to_owned())))?;
-            let resp = client.request(req).await;
-            resp.map(|r| (r.status(), start.elapsed()))
+            let req_timeout_ms: u64 = std::env::var("AP_HTTP_TIMEOUT_MS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(10_000);
+            let resp =
+                tokio_timeout(Duration::from_millis(req_timeout_ms), client.request(req)).await;
+            match resp {
+                Ok(Ok(r)) => Ok((r.status(), start.elapsed())),
+                Ok(Err(e)) => Err(e),
+                Err(_) => Ok((HyperStatus::REQUEST_TIMEOUT, start.elapsed())),
+            }
         };
 
         match result {

@@ -3,7 +3,8 @@ use serde_json::{json, Value};
 use silent::{header, Request, Response, Result, StatusCode};
 
 use crate::config::AppConfig;
-use crate::federation::delivery::{build_delivery_from_config, OutboundDelivery};
+// 出站投递由内存队列驱动
+use crate::federation::queue::{enqueue, DeliveryJob};
 
 #[silent_openapi::endpoint(
     summary = "获取 Outbox",
@@ -57,17 +58,16 @@ pub async fn outbox_post(mut req: Request) -> Result<Response> {
     // 构造投递器
     let cfg: &AppConfig = req.get_config_uncheck();
     let activity_str = body.activity.to_string();
-    // 若启用真实网络投递，使用 Hyper 发送，否则记录日志
-    if std::env::var("AP_DELIVERY_HTTP")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-    {
-        // 根据 URL 自适应 HTTP/HTTPS，并带重试
-        let _ =
-            crate::federation::delivery::deliver_activity(cfg, &body.inbox, &activity_str).await;
-    } else {
-        let delivery = build_delivery_from_config(cfg);
-        let _ = delivery.post_activity(&body.inbox, &activity_str).await;
+    // 优先入队，由后台 worker 进行重试与实际投递（或日志投递）
+    let _ = cfg; // 占位以避免未使用警告（未来可能用于多租户逻辑）
+    let ok = enqueue(DeliveryJob {
+        inbox_url: body.inbox.clone(),
+        body: activity_str,
+    });
+    if !ok {
+        let mut res = Response::json(&json!({"error":"queue_full"}));
+        res.set_status(StatusCode::SERVICE_UNAVAILABLE);
+        return Ok(res);
     }
 
     let mut res = Response::json(&json!({"status":"queued"}));

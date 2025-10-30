@@ -178,6 +178,7 @@ open http://127.0.0.1:8080/docs || true
   - 签名算法动态选择：由 `AP_SIGN_ALG=hmac|rsa|ed25519` 与 `AP_SIGN_PRIV_KEY_PATH=<PEM>` 控制；缺省回退到 HMAC
   - 每次投递自动附带 `Idempotency-Key`（正文 SHA256 的 Base64）
   - 支持 http/https 通道；指数退避重试由 `AP_BACKOFF_*` 参数控制
+  - 支持“内存/持久化”出站队列：默认内存队列（tokio mpsc），可切换 sled 后端（简易持久化）
 
 - 相关环境变量
   - `AP_SIGN_ENABLE=true` 开启签名（默认仅在需要的端点使用）
@@ -187,6 +188,11 @@ open http://127.0.0.1:8080/docs || true
   - `AP_SIGN_SECRET=your-secret` HMAC 共享密钥
   - `AP_SIGN_MAX_SKEW_SEC=300` 允许的时间偏移（用于 Date/created/expires）
   - `AP_BACKOFF_BASE_MS=500`、`AP_BACKOFF_MAX_MS=10000`、`AP_BACKOFF_MAX_RETRIES=3` 退避策略
+  - `AP_HTTP_TIMEOUT_MS=10000` 出站请求超时（毫秒，默认 10s）
+  - `AP_QUEUE_BACKEND=memory|sled` 出站队列后端（默认 memory）
+  - `AP_QUEUE_CAP=1000` 内存队列容量（memory 后端有效）
+  - `AP_QUEUE_WORKERS=2` 内存队列并发 worker 数（1–16，memory 后端有效）
+  - `AP_QUEUE_POLL_MS=500` sled 队列轮询间隔（毫秒，sled 后端有效）
 
 - 错误响应规范
   - 401 UNAUTHORIZED：
@@ -323,6 +329,15 @@ refactor(db): 优化对象存储抽象
   - `delivery_duration_ms{scheme}`：出站投递耗时直方图（单位 ms）
   - `inbound_total{endpoint, result}`：入站处理计数（endpoint: inbox；result: ok/unauthorized/duplicate）
   - `dedup_total{backend, result}`：去重命中统计（backend: memory/sled；result: hit/miss）
+  - `delivery_queue_total{backend, event}`：队列事件计数（backend: memory/sled；event: enqueued/dequeued/dropped）
+  - `delivery_queue_depth`：当前队列深度（Gauge）
+
+### 出站队列与 Outbox 行为
+
+- `POST /users/<name>/outbox` 行为为“入队”：
+  - 请求体：`{"inbox":"<url>","activity":{...}}`
+  - 正常：返回 `{ "status": "queued" }`
+  - 队列已满：返回 503 + `{ "error": "queue_full" }`
 
 ## 计划（Plan）
 
