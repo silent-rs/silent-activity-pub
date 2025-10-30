@@ -10,7 +10,8 @@ use crate::federation::discovery::webfinger;
 async fn health(_req: Request) -> Result<Response> {
     let body = serde_json::json!({
         "status": "ok",
-        "time": Local::now().naive_local().to_string()
+        "time": Local::now().naive_local().to_string(),
+        "request_id": scru128::new_string()
     });
     Ok(Response::json(&body))
 }

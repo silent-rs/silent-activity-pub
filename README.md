@@ -103,7 +103,13 @@ RUST_LOG=info cargo run --bin silent-activity-pub
 
 ```bash
 # 假设服务监听在 127.0.0.1:8080
-curl --max-time 5 -i http://127.0.0.1:8080/health
+curl --max-time 5 -s http://127.0.0.1:8080/health | jq
+# 返回示例：
+# {
+#   "status": "ok",
+#   "time": "2025-10-30 13:45:12",
+#   "request_id": "0u5r85s0b3l7h4k9m1c2e6f7g8d9j0n1"
+# }
 ```
 
 - WebFinger 查询（联邦发现示例）
