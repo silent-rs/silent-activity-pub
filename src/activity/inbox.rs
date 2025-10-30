@@ -1,4 +1,4 @@
-use crate::auth::http_sign::verify_hmac_sha256_headers;
+use crate::auth::http_sign::{verify_date_skew, verify_hmac_sha256_headers};
 use crate::config::AppConfig;
 use crate::observability::metrics::record_inbound;
 use serde_json::Value;
@@ -14,6 +14,13 @@ pub async fn inbox(_req: Request) -> Result<Response> {
     let req = _req;
     let cfg_owned: AppConfig = req.get_config_uncheck::<AppConfig>().clone();
     if cfg_owned.sign_enable && !cfg_owned.sign_shared_secret.is_empty() {
+        // 校验 Date 偏移
+        if !verify_date_skew(req.headers(), cfg_owned.sign_max_skew_sec) {
+            record_inbound("inbox", "unauthorized");
+            let mut res = Response::empty();
+            res.set_status(StatusCode::UNAUTHORIZED);
+            return Ok(res);
+        }
         let method = req.method().to_string();
         let path_q = req
             .uri()

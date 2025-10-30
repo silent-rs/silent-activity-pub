@@ -167,3 +167,24 @@ pub fn verify_hmac_sha256_headers(
     let expected = general_purpose::STANDARD.encode(mac.finalize().into_bytes());
     expected == sig_b64
 }
+
+/// 校验 Date 与当前时间偏移是否在允许范围内
+pub fn verify_date_skew(headers: &HeaderMap, max_skew_sec: u64) -> bool {
+    let date_val = match headers.get(header::DATE) {
+        Some(v) => v,
+        None => return false,
+    };
+    let date_str = match date_val.to_str() {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    // 解析 RFC2822 日期
+    let parsed = match chrono::DateTime::parse_from_rfc2822(date_str) {
+        Ok(dt) => dt,
+        Err(_) => return false,
+    };
+    let sent = parsed.with_timezone(&chrono::Utc).timestamp();
+    let now = chrono::Utc::now().timestamp();
+    let skew = (now - sent).unsigned_abs();
+    skew <= max_skew_sec
+}

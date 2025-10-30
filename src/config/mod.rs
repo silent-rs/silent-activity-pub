@@ -16,6 +16,8 @@ pub struct AppConfig {
     pub dedup_backend: String,
     // sled 路径
     pub sled_path: String,
+    // 入站验签：允许的时间偏移（秒）
+    pub sign_max_skew_sec: u64,
 }
 
 impl AppConfig {
@@ -42,6 +44,10 @@ impl AppConfig {
         let dedup_backend = env::var("AP_DEDUP_BACKEND").unwrap_or_else(|_| "memory".to_string());
         let sled_path =
             env::var("AP_SLED_PATH").unwrap_or_else(|_| "./data/dedup.sled".to_string());
+        let sign_max_skew_sec = env::var("AP_SIGN_MAX_SKEW_SEC")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(300);
         Self {
             base_url,
             sign_enable,
@@ -52,6 +58,7 @@ impl AppConfig {
             backoff_max_retries,
             dedup_backend,
             sled_path,
+            sign_max_skew_sec,
         }
     }
 }

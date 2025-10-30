@@ -171,6 +171,7 @@ open http://127.0.0.1:8080/docs || true
   - `AP_SIGN_ENABLE=true` 开启占位签名（HMAC-SHA256）
   - `AP_SIGN_KEY_ID=local#main` 指定 keyId
   - `AP_SIGN_SECRET=your-secret` 设置共享密钥
+  - `AP_SIGN_MAX_SKEW_SEC=300` 允许的 Date 头时间偏移（秒）
   - `AP_BACKOFF_BASE_MS=500`、`AP_BACKOFF_MAX_MS=10000`、`AP_BACKOFF_MAX_RETRIES=3` 配置退避策略
 - 当前实现为占位签名与日志型投递（不发送网络请求），用于联调与埋点验证
 - 后续将引入真实 HTTP Signatures 与可靠投递（含重试、去重、指标）
