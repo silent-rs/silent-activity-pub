@@ -58,6 +58,18 @@
 
 ---
 
+## P1 · 签名与可靠投递（前置骨架）
+
+- HTTP Signatures 骨架
+  - 内容：签名/验签接口（占位实现），输出 Date/Signature 头
+  - 完成标准：可被出站投递调用，未做真实加密
+  - 分支建议：`feature/phase-vii-b-prep`
+
+- 出站投递与退避策略骨架
+  - 内容：定义 BackoffPolicy 与 OutboundDelivery 接口，占位实现 LoggingDelivery
+  - 完成标准：日志输出包含签名信息与重试策略配置
+  - 分支建议：`feature/phase-vii-b-prep`
+
 ## 注意
 
 - 本阶段不引入签名校验、不做分发重试与队列

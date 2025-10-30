@@ -13,5 +13,6 @@ scru128 = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono"] }
 silent-openapi = { path = "./silent/silent-openapi" }
+async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1" }
