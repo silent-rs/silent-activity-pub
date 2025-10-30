@@ -36,6 +36,12 @@
   - 验证：`curl --max-time 10 -X POST -H 'Content-Type: application/activity+json' -d '{}' http://127.0.0.1:8080/inbox -i`
   - 分支建议：`feature/inbox`
 
+- OpenAPI 文档与 Swagger UI
+  - 内容：基于业务路由生成 OpenAPI，挂载 Swagger UI 到 `/docs`
+  - 完成标准：`/docs` 可用，`/docs/openapi.json` 返回 OpenAPI JSON
+  - 验证：`curl --max-time 5 -I http://127.0.0.1:8080/docs/openapi.json`
+  - 分支建议：`chore/openapi-docs`
+
 ---
 
 ## P0 · 框架与规范统一

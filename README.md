@@ -136,6 +136,14 @@ curl --max-time 10 -X POST \
 JSON
 ```
 
+- 接口文档（Swagger UI）
+
+```bash
+# 生成自业务路由的 OpenAPI 文档并挂载在 /docs
+# 启动后访问：http://127.0.0.1:8080/docs
+open http://127.0.0.1:8080/docs || true
+```
+
 ---
 
 ## 配置与运行
