@@ -1,5 +1,8 @@
 #![allow(dead_code)]
+use base64::{engine::general_purpose, Engine as _};
 use chrono::Local;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use silent::header::HeaderValue;
 use silent::headers::HeaderMap;
 
@@ -7,6 +10,7 @@ use silent::headers::HeaderMap;
 #[derive(Clone, Copy, Debug)]
 pub enum HttpSignAlgorithm {
     Hs2019,
+    HmacSha256,
 }
 
 /// 签名输入
@@ -16,6 +20,7 @@ pub struct SignInput<'a> {
     pub path_and_query: &'a str,
     pub key_id: &'a str,
     pub private_key_pem: Option<&'a str>,
+    pub shared_secret: Option<&'a str>,
 }
 
 /// 签名输出（需要设置到请求头）
@@ -61,6 +66,42 @@ impl HttpSigner for PlaceholderSigner {
 pub enum VerifyResult {
     Passed,
     Skipped,
+}
+
+/// 基于 HMAC-SHA256 的签名实现（配置共享密钥）
+#[derive(Clone, Debug, Default)]
+pub struct HmacSha256Signer;
+
+impl HttpSigner for HmacSha256Signer {
+    fn algorithm(&self) -> HttpSignAlgorithm {
+        HttpSignAlgorithm::HmacSha256
+    }
+
+    fn sign(&self, input: SignInput) -> SignOutput {
+        let date_str = Local::now().to_rfc2822();
+        let signing_string = format!(
+            "(request-target): {} {}\ndate: {}",
+            input.method.to_lowercase(),
+            input.path_and_query,
+            date_str
+        );
+        let secret = input.shared_secret.unwrap_or("");
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+            .unwrap_or_else(|_| Hmac::<Sha256>::new_from_slice(&[0u8; 0]).unwrap());
+        mac.update(signing_string.as_bytes());
+        let sig_bytes = mac.finalize().into_bytes();
+        let sig_b64 = general_purpose::STANDARD.encode(sig_bytes);
+        let sig_value = format!(
+            "keyId=\"{}\",algorithm=\"hmac-sha256\",headers=\"(request-target) date\",signature=\"{}\"",
+            input.key_id, sig_b64
+        );
+        SignOutput {
+            date: HeaderValue::from_str(date_str.as_str())
+                .unwrap_or_else(|_| HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 +0000")),
+            signature: HeaderValue::from_str(sig_value.as_str())
+                .unwrap_or_else(|_| HeaderValue::from_static("")),
+        }
+    }
 }
 
 /// 验签器接口（Phase VII-B 扩展真实实现）
