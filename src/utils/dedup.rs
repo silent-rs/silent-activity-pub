@@ -89,3 +89,39 @@ pub fn record_seen_with_config(key: &str, cfg: &AppConfig) -> bool {
     }
     record_seen(key)
 }
+
+/// 可扩展的去重后端 trait（为后续 Redis 等实现预留）
+#[allow(dead_code)]
+pub trait DedupStore: Send + Sync {
+    fn record_seen(&self, key: &str, cfg: &AppConfig) -> bool;
+}
+
+/// 内存后端适配器
+#[allow(dead_code)]
+pub struct MemoryStore;
+impl DedupStore for MemoryStore {
+    fn record_seen(&self, key: &str, _cfg: &AppConfig) -> bool {
+        record_seen(key)
+    }
+}
+
+/// sled 后端适配器
+#[allow(dead_code)]
+pub struct SledStore;
+impl DedupStore for SledStore {
+    fn record_seen(&self, key: &str, cfg: &AppConfig) -> bool {
+        record_seen_with_config(key, cfg)
+    }
+}
+
+/// Redis 后端占位（后续可用 feature="redis" 接入）
+#[allow(dead_code)]
+pub struct RedisStore;
+#[allow(dead_code)]
+impl DedupStore for RedisStore {
+    fn record_seen(&self, key: &str, _cfg: &AppConfig) -> bool {
+        // 预留实现：使用 SETNX + EXPIRE 或 Lua 实现 TTL+原子去重
+        // 目前占位，回退使用内存逻辑
+        record_seen(key)
+    }
+}

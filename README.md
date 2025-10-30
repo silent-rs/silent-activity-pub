@@ -175,6 +175,19 @@ open http://127.0.0.1:8080/docs || true
 > 安全提示：私钥与签名材料应保存在专用密钥管理中（如 KMS 或受限文件权限），严禁提交到仓库。
 
 ---
+## 去重与幂等
+
+- 入站去重（Inbox）：
+  - 机制：基于 `activity.id` 的去重，返回 202 并加头 `X-Deduplicated: true`
+  - 后端选择：
+    - `AP_DEDUP_BACKEND=memory` 使用内存 LRU+TTL（默认，TTL=10分钟）
+    - `AP_DEDUP_BACKEND=sled` 使用 sled 持久化（建议设置 `AP_SLED_PATH`）
+  - 相关文件：`src/utils/dedup.rs`
+
+- 出站幂等：
+  - 每次投递添加 `Idempotency-Key`（正文 SHA256 的 Base64），便于对端去重
+
+---
 
 ## 开发命令速查
 
@@ -266,6 +279,16 @@ refactor(db): 优化对象存储抽象
 - 参考实现：Mastodon、Misskey、Akkoma 等
 
 > 设计时优先与主流实现互操作，并保持扩展点（签名、路由、对象模型）可替换。
+
+---
+
+## 指标与可观测性
+
+- 指标端点：`GET /metrics`（Prometheus 文本格式）
+- 指标维度：
+  - `delivery_total{scheme, result, code}`：出站投递计数（scheme: http/https；result: ok/error；code: HTTP 状态码，异常为 0）
+  - `delivery_duration_ms{scheme}`：出站投递耗时直方图（单位 ms）
+  - `inbound_total{endpoint, result}`：入站处理计数（endpoint: inbox；result: ok/unauthorized/duplicate）
 
 ## 计划（Plan）
 
