@@ -3,6 +3,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::Local;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use silent::header;
 use silent::header::HeaderValue;
 use silent::headers::HeaderMap;
 
@@ -109,4 +110,60 @@ pub trait HttpVerifier: Send + Sync {
     fn verify(&self, _headers: &HeaderMap) -> VerifyResult {
         VerifyResult::Skipped
     }
+}
+
+fn parse_signature_header(value: &HeaderValue) -> Option<(String, String)> {
+    let s = value.to_str().ok()?;
+    // very naive parser: keyId="..",signature=".."
+    let mut key_id = String::new();
+    let mut signature = String::new();
+    for part in s.split(',') {
+        let kv: Vec<&str> = part.splitn(2, '=').collect();
+        if kv.len() != 2 {
+            continue;
+        }
+        let k = kv[0].trim();
+        let v = kv[1].trim().trim_matches('"');
+        match k {
+            "keyId" => key_id = v.to_string(),
+            "signature" => signature = v.to_string(),
+            _ => {}
+        }
+    }
+    if key_id.is_empty() || signature.is_empty() {
+        None
+    } else {
+        Some((key_id, signature))
+    }
+}
+
+pub fn verify_hmac_sha256_headers(
+    headers: &HeaderMap,
+    method: &str,
+    path_and_query: &str,
+    shared_secret: &str,
+) -> bool {
+    let sig_header = match headers.get("signature") {
+        Some(v) => v,
+        None => return false,
+    };
+    let date = match headers.get(header::DATE) {
+        Some(v) => v.to_str().ok().unwrap_or(""),
+        None => return false,
+    };
+    let (_key_id, sig_b64) = match parse_signature_header(sig_header) {
+        Some(t) => t,
+        None => return false,
+    };
+    let signing_string = format!(
+        "(request-target): {} {}\ndate: {}",
+        method.to_lowercase(),
+        path_and_query,
+        date
+    );
+    let mut mac = Hmac::<Sha256>::new_from_slice(shared_secret.as_bytes())
+        .unwrap_or_else(|_| Hmac::<Sha256>::new_from_slice(&[0u8; 0]).unwrap());
+    mac.update(signing_string.as_bytes());
+    let expected = general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+    expected == sig_b64
 }

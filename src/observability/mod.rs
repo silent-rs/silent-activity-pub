@@ -9,3 +9,5 @@ pub fn init_tracing() {
         ))
         .init();
 }
+
+pub mod metrics;
