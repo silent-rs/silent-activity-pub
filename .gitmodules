@@ -1,0 +1,18 @@
+[submodule "odyssey"]
+	path = odyssey
+	url = git@github.com:silent-rs/silent-odyssey.git
+[submodule "silent"]
+	path = silent
+	url = git@github.com:silent-rs/silent.git
+[submodule "silent-crdt"]
+	path = silent-crdt
+	url = git@github.com:silent-rs/silent-crdt.git
+[submodule "silent-nas"]
+	path = silent-nas
+	url = git@github.com:silent-rs/silent-nas.git
+[submodule "silent-grpc"]
+	path = silent-grpc
+	url = git@github.com:silent-rs/silent-grpc.git
+[submodule "silent-mqtt"]
+	path = silent-mqtt
+	url = git@github.com:silent-rs/silent-mqtt.git
