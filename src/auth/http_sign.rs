@@ -391,7 +391,6 @@ static PUBKEY_CACHE: Lazy<Mutex<LruCache<String, RsaPublicKey>>> =
 
 static ED25519_PUBKEY_CACHE: Lazy<Mutex<LruCache<String, Ed25519VerifyingKey>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
-
 async fn http_get_bytes(url: &str) -> anyhow::Result<Bytes> {
     if url.starts_with("https://") {
         let https = HttpsConnectorBuilder::new()
@@ -738,7 +737,6 @@ fn verify_rsa_sig_with_string(signing_string: &str, sig_b64: &str, pk: RsaPublic
         false
     }
 }
-
 // ========== hs2019 inbound verify (Ed25519) ==========
 
 pub async fn verify_hs2019_ed25519_headers_async(

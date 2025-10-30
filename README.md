@@ -322,6 +322,7 @@ refactor(db): 优化对象存储抽象
   - `delivery_total{scheme, result, code}`：出站投递计数（scheme: http/https；result: ok/error；code: HTTP 状态码，异常为 0）
   - `delivery_duration_ms{scheme}`：出站投递耗时直方图（单位 ms）
   - `inbound_total{endpoint, result}`：入站处理计数（endpoint: inbox；result: ok/unauthorized/duplicate）
+  - `dedup_total{backend, result}`：去重命中统计（backend: memory/sled；result: hit/miss）
 
 ## 计划（Plan）
 
