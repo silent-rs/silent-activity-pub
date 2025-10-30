@@ -255,10 +255,7 @@ pub async fn deliver_activity_http(
         )
         .body(Full::from(Bytes::from(body.to_owned())))?;
 
-    let req_timeout_ms: u64 = std::env::var("AP_HTTP_TIMEOUT_MS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(10_000);
+    let req_timeout_ms: u64 = cfg.http_timeout_ms;
     let resp = tokio_timeout(Duration::from_millis(req_timeout_ms), client.request(req)).await??;
     let status = resp.status();
     let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -315,10 +312,7 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                     idem,
                 )
                 .body(Full::from(Bytes::from(body.to_owned())))?;
-            let req_timeout_ms: u64 = std::env::var("AP_HTTP_TIMEOUT_MS")
-                .ok()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(10_000);
+            let req_timeout_ms: u64 = cfg.http_timeout_ms;
             let resp =
                 tokio_timeout(Duration::from_millis(req_timeout_ms), client.request(req)).await;
             match resp {
@@ -357,10 +351,7 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                     idem,
                 )
                 .body(Full::from(Bytes::from(body.to_owned())))?;
-            let req_timeout_ms: u64 = std::env::var("AP_HTTP_TIMEOUT_MS")
-                .ok()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(10_000);
+            let req_timeout_ms: u64 = cfg.http_timeout_ms;
             let resp =
                 tokio_timeout(Duration::from_millis(req_timeout_ms), client.request(req)).await;
             match resp {

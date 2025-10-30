@@ -39,22 +39,13 @@ pub fn init(cfg: AppConfig) {
     if QUEUE_SENDER.lock().is_some() {
         return;
     }
-    let backend = std::env::var("AP_QUEUE_BACKEND")
-        .unwrap_or_else(|_| "memory".into())
-        .to_ascii_lowercase();
+    let backend = cfg.queue_backend.to_ascii_lowercase();
     if backend == "sled" {
         init_sled(cfg);
         return;
     }
-    let cap: usize = std::env::var("AP_QUEUE_CAP")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(1000);
-    let workers: usize = std::env::var("AP_QUEUE_WORKERS")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(2)
-        .clamp(1, 16);
+    let cap: usize = cfg.queue_cap;
+    let workers: usize = cfg.queue_workers.clamp(1, 16);
     let (tx, rx) = mpsc::channel::<DeliveryJob>(cap);
     *QUEUE_SENDER.lock() = Some(tx);
     QUEUE_DEPTH.set(0.0);
@@ -78,9 +69,7 @@ fn spawn_workers(cfg: AppConfig, rx: mpsc::Receiver<DeliveryJob>, workers: usize
                 let Some(job) = job_opt else { break };
                 QUEUE_DEPTH.dec();
                 // 根据开关选择真实投递或日志投递
-                let http_enabled = std::env::var("AP_DELIVERY_HTTP")
-                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                    .unwrap_or(false);
+                let http_enabled = cfg_clone.delivery_http;
                 let result = if http_enabled {
                     deliver_activity(&cfg_clone, &job.inbox_url, &job.body).await
                 } else {
@@ -128,7 +117,7 @@ pub fn enqueue(job: DeliveryJob) -> bool {
 static SLED_DB: Lazy<Mutex<Option<sled::Db>>> = Lazy::new(|| Mutex::new(None));
 
 fn init_sled(cfg: AppConfig) {
-    let path = std::env::var("AP_SLED_PATH").unwrap_or_else(|_| "./data/dedup.sled".into());
+    let path = cfg.sled_path.clone();
     match sled::open(&path) {
         Ok(db) => {
             *SLED_DB.lock() = Some(db);
@@ -187,10 +176,7 @@ fn enqueue_sled(job: DeliveryJob) -> bool {
 
 fn spawn_sled_worker(cfg: AppConfig) {
     tokio::spawn(async move {
-        let poll_ms: u64 = std::env::var("AP_QUEUE_POLL_MS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(500);
+        let poll_ms: u64 = cfg.queue_poll_ms;
         loop {
             let maybe_job = {
                 let db_opt = SLED_DB.lock();

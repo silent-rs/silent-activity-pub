@@ -1,0 +1,42 @@
+# 服务
+base_url = "http://127.0.0.1:8080"
+listen_addr = "0.0.0.0:8080"
+
+# 签名（入站/出站）
+sign_enable = false                 # 是否启用签名校验/出站签名
+sign_key_id = "local#main"          # 出站签名的 keyId
+sign_shared_secret = "dev-secret"   # HMAC 共享密钥（sign_alg = "hmac" 时使用）
+sign_max_skew_sec = 300             # 验签允许的时间偏移（秒）
+sign_alg = "hmac"                   # 出站签名算法：hmac|rsa|ed25519
+sign_priv_key_path = ""             # 当 rsa/ed25519 时必需，PKCS#8 私钥路径
+
+# 退避重试
+backoff_base_ms = 500
+backoff_max_ms = 10000
+backoff_max_retries = 3
+
+# 去重
+dedup_backend = "memory"            # memory|sled
+sled_path = "./data/dedup.sled"     # sled 数据文件路径
+
+# 出站 HTTP
+http_timeout_ms = 10000             # 出站请求超时（毫秒）
+delivery_http = false               # true 则实际发送 HTTP/HTTPS；false 仅记录日志（联调/本地）
+
+# 出站队列
+queue_backend = "memory"            # memory|sled
+queue_cap = 1000                    # 内存队列容量（仅 memory 有效）
+queue_workers = 2                   # 内存队列 worker 数（1–16，仅 memory 有效）
+queue_poll_ms = 500                 # sled 队列轮询间隔（毫秒，仅 sled 有效）
+
+# =======================
+# 可选：RSA/Ed25519 出站签名示例（取消注释使用）
+#
+# sign_enable = true
+# sign_alg = "rsa"
+# sign_priv_key_path = "./keys/rsa-private.pk8.pem"  # PKCS#8 格式
+#
+# 或使用 Ed25519：
+# sign_enable = true
+# sign_alg = "ed25519"
+# sign_priv_key_path = "./keys/ed25519-private.pk8.pem"  # PKCS#8 格式
