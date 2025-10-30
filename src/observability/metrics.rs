@@ -48,8 +48,7 @@ pub fn record_delivery(scheme: &str, ok: bool, code: u16, elapsed_ms: u64) {
         .observe(elapsed_ms as f64);
 }
 
-pub fn record_inbound(endpoint: &str, ok: bool) {
-    let result = if ok { "ok" } else { "error" };
+pub fn record_inbound(endpoint: &str, result: &str) {
     INBOUND_COUNTER.with_label_values(&[endpoint, result]).inc();
 }
 

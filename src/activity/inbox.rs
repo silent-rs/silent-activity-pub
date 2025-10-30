@@ -1,6 +1,8 @@
 use crate::auth::http_sign::verify_hmac_sha256_headers;
 use crate::config::AppConfig;
 use crate::observability::metrics::record_inbound;
+use crate::utils::dedup::record_seen;
+use serde_json::Value;
 use silent::{Request, Response, Result, StatusCode};
 
 /// Shared inbox 和用户 inbox 占位：返回 202
@@ -21,17 +23,32 @@ pub async fn inbox(_req: Request) -> Result<Response> {
             .unwrap_or("/");
         let ok =
             verify_hmac_sha256_headers(req.headers(), &method, path_q, &cfg.sign_shared_secret);
-        record_inbound("inbox", ok);
+        record_inbound("inbox", if ok { "ok" } else { "unauthorized" });
         if !ok {
             let mut res = Response::empty();
             res.set_status(StatusCode::UNAUTHORIZED);
             return Ok(res);
         }
     } else {
-        record_inbound("inbox", true);
+        record_inbound("inbox", "ok");
     }
 
+    // 简单去重：基于 activity.id
     let mut res = Response::empty();
+    if let Ok(val) = {
+        let mut req2 = req;
+        // 尝试解析为 JSON（不会用于后续业务，仅用于去重）
+        req2.json_parse::<Value>().await
+    } {
+        if let Some(id) = val.get("id").and_then(|v| v.as_str()) {
+            if !record_seen(id) {
+                res.headers_mut().insert(
+                    silent::header::HeaderName::from_static("x-deduplicated"),
+                    silent::header::HeaderValue::from_static("true"),
+                );
+            }
+        }
+    }
     res.set_status(StatusCode::ACCEPTED);
     Ok(res)
 }

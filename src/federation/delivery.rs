@@ -6,12 +6,14 @@ use tracing::info;
 
 use crate::auth::http_sign::{HmacSha256Signer, HttpSigner, PlaceholderSigner, SignInput};
 use crate::config::AppConfig;
+use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::{Request as HyperRequest, StatusCode as HyperStatus};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
+use sha2::{Digest, Sha256};
 use std::time::Instant;
 use tokio::time::sleep;
 
@@ -120,12 +122,20 @@ pub async fn deliver_activity_http(
     http.enforce_http(true);
     let client = Client::builder(TokioExecutor::new()).build(http);
 
+    let mut hasher = Sha256::new();
+    hasher.update(body.as_bytes());
+    let idem = general_purpose::STANDARD.encode(hasher.finalize());
+
     let req: HyperRequest<Full<Bytes>> = HyperRequest::post(inbox_url)
         .header(http::header::CONTENT_TYPE, "application/activity+json")
         .header(http::header::DATE, sign.date)
         .header(
             http::header::HeaderName::from_static("signature"),
             sign.signature,
+        )
+        .header(
+            http::header::HeaderName::from_static("idempotency-key"),
+            idem,
         )
         .body(Full::from(Bytes::from(body.to_owned())))?;
 
@@ -169,12 +179,20 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                 shared_secret: Some(&cfg.sign_shared_secret),
             });
 
+            let mut hasher = Sha256::new();
+            hasher.update(body.as_bytes());
+            let idem = general_purpose::STANDARD.encode(hasher.finalize());
+
             let req: HyperRequest<Full<Bytes>> = HyperRequest::post(inbox_url)
                 .header(http::header::CONTENT_TYPE, "application/activity+json")
                 .header(http::header::DATE, sign.date)
                 .header(
                     http::header::HeaderName::from_static("signature"),
                     sign.signature,
+                )
+                .header(
+                    http::header::HeaderName::from_static("idempotency-key"),
+                    idem,
                 )
                 .body(Full::from(Bytes::from(body.to_owned())))?;
             let resp = client.request(req).await;
@@ -194,12 +212,20 @@ pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> a
                 shared_secret: Some(&cfg.sign_shared_secret),
             });
 
+            let mut hasher = Sha256::new();
+            hasher.update(body.as_bytes());
+            let idem = general_purpose::STANDARD.encode(hasher.finalize());
+
             let req: HyperRequest<Full<Bytes>> = HyperRequest::post(inbox_url)
                 .header(http::header::CONTENT_TYPE, "application/activity+json")
                 .header(http::header::DATE, sign.date)
                 .header(
                     http::header::HeaderName::from_static("signature"),
                     sign.signature,
+                )
+                .header(
+                    http::header::HeaderName::from_static("idempotency-key"),
+                    idem,
                 )
                 .body(Full::from(Bytes::from(body.to_owned())))?;
             let resp = client.request(req).await;
