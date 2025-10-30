@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Local;
+use ed25519_dalek::Signer as _;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use silent::header;
@@ -12,6 +13,8 @@ use silent::headers::HeaderMap;
 pub enum HttpSignAlgorithm {
     Hs2019,
     HmacSha256,
+    RsaSha256,
+    Ed25519,
 }
 
 /// 签名输入
@@ -94,6 +97,88 @@ impl HttpSigner for HmacSha256Signer {
         let sig_b64 = general_purpose::STANDARD.encode(sig_bytes);
         let sig_value = format!(
             "keyId=\"{}\",algorithm=\"hmac-sha256\",headers=\"(request-target) date\",signature=\"{}\"",
+            input.key_id, sig_b64
+        );
+        SignOutput {
+            date: HeaderValue::from_str(date_str.as_str())
+                .unwrap_or_else(|_| HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 +0000")),
+            signature: HeaderValue::from_str(sig_value.as_str())
+                .unwrap_or_else(|_| HeaderValue::from_static("")),
+        }
+    }
+}
+
+/// hs2019 RSA-SHA256 签名器
+pub struct RsaSha256Signer {
+    private_key: rsa::RsaPrivateKey,
+}
+
+impl RsaSha256Signer {
+    pub fn from_pkcs8_pem(pem: &str) -> anyhow::Result<Self> {
+        use rsa::pkcs8::DecodePrivateKey;
+        let key = rsa::RsaPrivateKey::from_pkcs8_pem(pem)?;
+        Ok(Self { private_key: key })
+    }
+}
+
+impl HttpSigner for RsaSha256Signer {
+    fn algorithm(&self) -> HttpSignAlgorithm {
+        HttpSignAlgorithm::RsaSha256
+    }
+    fn sign(&self, input: SignInput) -> SignOutput {
+        use rsa::pkcs1v15::SigningKey;
+        use rsa::signature::{SignatureEncoding, Signer};
+        use sha2::Sha256 as Sha2;
+        let date_str = Local::now().to_rfc2822();
+        let signing_string = format!(
+            "(request-target): {} {}\ndate: {}",
+            input.method.to_lowercase(),
+            input.path_and_query,
+            date_str
+        );
+        let key = SigningKey::<Sha2>::new(self.private_key.clone());
+        let sig = key.sign(signing_string.as_bytes());
+        let sig_b64 = general_purpose::STANDARD.encode(sig.to_bytes());
+        let sig_value = format!(
+            "keyId=\"{}\",algorithm=\"hs2019\",headers=\"(request-target) date\",signature=\"{}\"",
+            input.key_id, sig_b64
+        );
+        SignOutput {
+            date: HeaderValue::from_str(date_str.as_str())
+                .unwrap_or_else(|_| HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 +0000")),
+            signature: HeaderValue::from_str(sig_value.as_str())
+                .unwrap_or_else(|_| HeaderValue::from_static("")),
+        }
+    }
+}
+
+/// hs2019 Ed25519 签名器
+pub struct Ed25519Signer(ed25519_dalek::SigningKey);
+
+impl Ed25519Signer {
+    pub fn from_pkcs8_pem(pem: &str) -> anyhow::Result<Self> {
+        use pkcs8::DecodePrivateKey;
+        let key = ed25519_dalek::SigningKey::from_pkcs8_pem(pem)?;
+        Ok(Self(key))
+    }
+}
+
+impl HttpSigner for Ed25519Signer {
+    fn algorithm(&self) -> HttpSignAlgorithm {
+        HttpSignAlgorithm::Ed25519
+    }
+    fn sign(&self, input: SignInput) -> SignOutput {
+        let date_str = Local::now().to_rfc2822();
+        let signing_string = format!(
+            "(request-target): {} {}\ndate: {}",
+            input.method.to_lowercase(),
+            input.path_and_query,
+            date_str
+        );
+        let sig = self.0.sign(signing_string.as_bytes());
+        let sig_b64 = general_purpose::STANDARD.encode(sig.to_bytes());
+        let sig_value = format!(
+            "keyId=\"{}\",algorithm=\"hs2019\",headers=\"(request-target) date\",signature=\"{}\"",
             input.key_id, sig_b64
         );
         SignOutput {

@@ -4,7 +4,9 @@ use chrono::Local;
 use std::time::Duration;
 use tracing::info;
 
-use crate::auth::http_sign::{HmacSha256Signer, HttpSigner, PlaceholderSigner, SignInput};
+use crate::auth::http_sign::{
+    Ed25519Signer, HmacSha256Signer, HttpSigner, PlaceholderSigner, RsaSha256Signer, SignInput,
+};
 use crate::config::AppConfig;
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
@@ -83,18 +85,105 @@ impl<S: HttpSigner + Send + Sync> OutboundDelivery for LoggingDelivery<S> {
     }
 }
 
+/// 动态签名投递器（使用 trait 对象便于按配置切换算法）
+pub struct DynDelivery {
+    signer: Box<dyn HttpSigner + Send + Sync>,
+    backoff: BackoffPolicy,
+    key_id: String,
+    shared_secret: String,
+}
+
+impl DynDelivery {
+    pub fn new(
+        signer: Box<dyn HttpSigner + Send + Sync>,
+        backoff: BackoffPolicy,
+        key_id: String,
+        shared_secret: String,
+    ) -> Self {
+        Self {
+            signer,
+            backoff,
+            key_id,
+            shared_secret,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl OutboundDelivery for DynDelivery {
+    async fn post_activity(&self, inbox_url: &str, body: &str) -> anyhow::Result<()> {
+        let sign = self.signer.sign(SignInput {
+            method: "post",
+            path_and_query: inbox_url,
+            key_id: &self.key_id,
+            private_key_pem: None,
+            shared_secret: Some(&self.shared_secret),
+        });
+        info!(
+            target: "delivery",
+            %inbox_url,
+            date = ?sign.date,
+            signature = ?sign.signature,
+            time = %Local::now().naive_local(),
+            "stub deliver activity(dyn): {}",
+            body
+        );
+        Ok(())
+    }
+}
+
 /// 由配置构建一个占位出站投递器
 #[allow(clippy::default_constructed_unit_structs)]
-pub fn build_delivery_from_config(cfg: &AppConfig) -> LoggingDelivery<HmacSha256Signer> {
-    let signer = HmacSha256Signer;
+pub fn build_delivery_from_config(cfg: &AppConfig) -> DynDelivery {
+    let signer_box: Box<dyn HttpSigner> = match cfg.sign_alg.to_lowercase().as_str() {
+        "rsa" => {
+            if !cfg.sign_priv_key_path.is_empty() {
+                match std::fs::read_to_string(&cfg.sign_priv_key_path) {
+                    Ok(pem) => match RsaSha256Signer::from_pkcs8_pem(&pem) {
+                        Ok(s) => Box::new(s),
+                        Err(e) => {
+                            tracing::warn!(target="sign", error=%format!("{e:#}"), "load RSA key failed, fallback to HMAC");
+                            Box::new(HmacSha256Signer)
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(target="sign", error=%format!("{e:#}"), "read RSA key file failed, fallback to HMAC");
+                        Box::new(HmacSha256Signer)
+                    }
+                }
+            } else {
+                Box::new(HmacSha256Signer)
+            }
+        }
+        "ed25519" => {
+            if !cfg.sign_priv_key_path.is_empty() {
+                match std::fs::read_to_string(&cfg.sign_priv_key_path) {
+                    Ok(pem) => match Ed25519Signer::from_pkcs8_pem(&pem) {
+                        Ok(s) => Box::new(s),
+                        Err(e) => {
+                            tracing::warn!(target="sign", error=%format!("{e:#}"), "load Ed25519 key failed, fallback to HMAC");
+                            Box::new(HmacSha256Signer)
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(target="sign", error=%format!("{e:#}"), "read Ed25519 key file failed, fallback to HMAC");
+                        Box::new(HmacSha256Signer)
+                    }
+                }
+            } else {
+                Box::new(HmacSha256Signer)
+            }
+        }
+        _ => Box::new(HmacSha256Signer),
+    };
     let backoff = BackoffPolicy {
         base_delay: Duration::from_millis(cfg.backoff_base_ms),
         max_delay: Duration::from_millis(cfg.backoff_max_ms),
         max_retries: cfg.backoff_max_retries,
     };
-    let _ = signer.algorithm();
-    LoggingDelivery::new(
-        signer,
+    let _ = signer_box.algorithm();
+    DynDelivery::new(
+        signer_box,
         backoff,
         cfg.sign_key_id.clone(),
         cfg.sign_shared_secret.clone(),

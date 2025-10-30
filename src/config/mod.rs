@@ -18,6 +18,10 @@ pub struct AppConfig {
     pub sled_path: String,
     // 入站验签：允许的时间偏移（秒）
     pub sign_max_skew_sec: u64,
+    // 出站签名算法：hmac|rsa|ed25519
+    pub sign_alg: String,
+    // 出站私钥路径（当 alg=rsa/ed25519 时必需）
+    pub sign_priv_key_path: String,
 }
 
 impl AppConfig {
@@ -48,6 +52,8 @@ impl AppConfig {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(300);
+        let sign_alg = env::var("AP_SIGN_ALG").unwrap_or_else(|_| "hmac".to_string());
+        let sign_priv_key_path = env::var("AP_SIGN_PRIV_KEY_PATH").unwrap_or_default();
         Self {
             base_url,
             sign_enable,
@@ -59,6 +65,8 @@ impl AppConfig {
             dedup_backend,
             sled_path,
             sign_max_skew_sec,
+            sign_alg,
+            sign_priv_key_path,
         }
     }
 }
