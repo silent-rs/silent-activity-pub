@@ -3,7 +3,8 @@ use chrono::Local;
 use std::time::Duration;
 use tracing::info;
 
-use crate::auth::http_sign::{HttpSigner, PlaceholderSigner, SignInput};
+use crate::auth::http_sign::{HmacSha256Signer, HttpSigner, PlaceholderSigner, SignInput};
+use crate::config::AppConfig;
 
 /// 重试与退避策略
 #[derive(Clone, Debug)]
@@ -49,6 +50,7 @@ impl<S: HttpSigner + Send + Sync> OutboundDelivery for LoggingDelivery<S> {
             path_and_query: inbox_url,
             key_id: "local#main",
             private_key_pem: None,
+            shared_secret: Some("dev-secret"),
         });
         info!(
             target: "delivery",
@@ -61,4 +63,17 @@ impl<S: HttpSigner + Send + Sync> OutboundDelivery for LoggingDelivery<S> {
         );
         Ok(())
     }
+}
+
+/// 由配置构建一个占位出站投递器
+#[allow(clippy::default_constructed_unit_structs)]
+pub fn build_delivery_from_config(cfg: &AppConfig) -> LoggingDelivery<HmacSha256Signer> {
+    let signer = HmacSha256Signer;
+    let backoff = BackoffPolicy {
+        base_delay: Duration::from_millis(cfg.backoff_base_ms),
+        max_delay: Duration::from_millis(cfg.backoff_max_ms),
+        max_retries: cfg.backoff_max_retries,
+    };
+    let _ = signer.algorithm();
+    LoggingDelivery::new(signer, backoff)
 }
