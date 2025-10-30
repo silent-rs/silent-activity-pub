@@ -180,19 +180,12 @@ open http://127.0.0.1:8080/docs || true
   - 支持 http/https 通道；指数退避重试由 `AP_BACKOFF_*` 参数控制
   - 支持“内存/持久化”出站队列：默认内存队列（tokio mpsc），可切换 sled 后端（简易持久化）
 
-- 相关环境变量
-  - `AP_SIGN_ENABLE=true` 开启签名（默认仅在需要的端点使用）
-  - `AP_SIGN_ALG=hmac|rsa|ed25519` 出站签名算法
-  - `AP_SIGN_PRIV_KEY_PATH=/path/to/key.pem` 当 `rsa/ed25519` 时必需（PKCS#8 私钥）
-  - `AP_SIGN_KEY_ID=local#main` 发送时使用的 keyId
-  - `AP_SIGN_SECRET=your-secret` HMAC 共享密钥
-  - `AP_SIGN_MAX_SKEW_SEC=300` 允许的时间偏移（用于 Date/created/expires）
-  - `AP_BACKOFF_BASE_MS=500`、`AP_BACKOFF_MAX_MS=10000`、`AP_BACKOFF_MAX_RETRIES=3` 退避策略
-  - `AP_HTTP_TIMEOUT_MS=10000` 出站请求超时（毫秒，默认 10s）
-  - `AP_QUEUE_BACKEND=memory|sled` 出站队列后端（默认 memory）
-  - `AP_QUEUE_CAP=1000` 内存队列容量（memory 后端有效）
-  - `AP_QUEUE_WORKERS=2` 内存队列并发 worker 数（1–16，memory 后端有效）
-  - `AP_QUEUE_POLL_MS=500` sled 队列轮询间隔（毫秒，sled 后端有效）
+- 主要配置项（TOML）
+  - 签名：`sign_enable`、`sign_alg`、`sign_priv_key_path`、`sign_key_id`、`sign_shared_secret`、`sign_max_skew_sec`
+  - 退避：`backoff_base_ms`、`backoff_max_ms`、`backoff_max_retries`
+  - HTTP：`http_timeout_ms`
+  - 队列：`queue_backend`（memory|sled）、`queue_cap`、`queue_workers`、`queue_poll_ms`
+  - 说明：可用环境变量覆盖 TOML；强烈建议以 TOML 为主，环境变量仅做临时覆盖（如 CI/容器部署）
 
 - 错误响应规范
   - 401 UNAUTHORIZED：
@@ -210,7 +203,7 @@ open http://127.0.0.1:8080/docs || true
   - ID 一律使用 `scru128` 生成，高可用且可排序
   - 时间戳使用 `chrono::Local::now().naive_local()`，统一本地时间
 - 配置优先级：TOML 配置文件 > 环境变量覆盖 > 内置默认值
-- 配置文件路径：默认 `config/app.toml`，可通过环境变量 `AP_CONFIG` 指定
+- 配置文件路径：默认 `config/app.toml`，可通过环境变量 `AP_CONFIG` 指定；提供示例 `config/app.example.toml`
 
 ### 配置文件示例（config/app.toml）
 
@@ -247,7 +240,17 @@ queue_workers = 2          # 仅 memory 有效
 queue_poll_ms = 500        # 仅 sled 有效
 ```
 
-> 可以使用环境变量覆盖 TOML 中的配置（如 `AP_BASE_URL`、`AP_LISTEN` 等）。
+> 可以使用环境变量覆盖 TOML 中的配置（如 `AP_BASE_URL`、`AP_LISTEN` 等）。推荐以 TOML 为主。
+
+### 快速开始（使用示例配置）
+
+```bash
+# 复制示例配置并修改
+cp config/app.example.toml config/app.toml
+
+# 启动（建议设置日志等级）
+RUST_LOG=info cargo run --bin silent-activity-pub
+```
 
 > 安全提示：私钥与签名材料应保存在专用密钥管理中（如 KMS 或受限文件权限），严禁提交到仓库。
 
