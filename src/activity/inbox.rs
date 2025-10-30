@@ -1,7 +1,6 @@
 use crate::auth::http_sign::verify_hmac_sha256_headers;
 use crate::config::AppConfig;
 use crate::observability::metrics::record_inbound;
-use crate::utils::dedup::record_seen;
 use serde_json::Value;
 use silent::{Request, Response, Result, StatusCode};
 
@@ -13,16 +12,20 @@ use silent::{Request, Response, Result, StatusCode};
 pub async fn inbox(_req: Request) -> Result<Response> {
     // 验签（可选）
     let req = _req;
-    let cfg: &AppConfig = req.get_config_uncheck();
-    if cfg.sign_enable && !cfg.sign_shared_secret.is_empty() {
+    let cfg_owned: AppConfig = req.get_config_uncheck::<AppConfig>().clone();
+    if cfg_owned.sign_enable && !cfg_owned.sign_shared_secret.is_empty() {
         let method = req.method().to_string();
         let path_q = req
             .uri()
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or("/");
-        let ok =
-            verify_hmac_sha256_headers(req.headers(), &method, path_q, &cfg.sign_shared_secret);
+        let ok = verify_hmac_sha256_headers(
+            req.headers(),
+            &method,
+            path_q,
+            &cfg_owned.sign_shared_secret,
+        );
         record_inbound("inbox", if ok { "ok" } else { "unauthorized" });
         if !ok {
             let mut res = Response::empty();
@@ -41,7 +44,7 @@ pub async fn inbox(_req: Request) -> Result<Response> {
         req2.json_parse::<Value>().await
     } {
         if let Some(id) = val.get("id").and_then(|v| v.as_str()) {
-            if !record_seen(id) {
+            if !crate::utils::dedup::record_seen_with_config(id, &cfg_owned) {
                 res.headers_mut().insert(
                     silent::header::HeaderName::from_static("x-deduplicated"),
                     silent::header::HeaderValue::from_static("true"),

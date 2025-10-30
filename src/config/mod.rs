@@ -12,6 +12,10 @@ pub struct AppConfig {
     pub backoff_base_ms: u64,
     pub backoff_max_ms: u64,
     pub backoff_max_retries: usize,
+    // 去重后端：memory | sled
+    pub dedup_backend: String,
+    // sled 路径
+    pub sled_path: String,
 }
 
 impl AppConfig {
@@ -35,6 +39,9 @@ impl AppConfig {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(3);
+        let dedup_backend = env::var("AP_DEDUP_BACKEND").unwrap_or_else(|_| "memory".to_string());
+        let sled_path =
+            env::var("AP_SLED_PATH").unwrap_or_else(|_| "./data/dedup.sled".to_string());
         Self {
             base_url,
             sign_enable,
@@ -43,6 +50,8 @@ impl AppConfig {
             backoff_base_ms,
             backoff_max_ms,
             backoff_max_retries,
+            dedup_backend,
+            sled_path,
         }
     }
 }
