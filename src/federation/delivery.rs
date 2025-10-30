@@ -8,9 +8,11 @@ use crate::config::AppConfig;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::{Request as HyperRequest, StatusCode as HyperStatus};
+use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use hyper_util::rt::TokioExecutor;
 use std::time::Instant;
+use tokio::time::sleep;
 
 /// 重试与退避策略
 #[derive(Clone, Debug)]
@@ -135,4 +137,93 @@ pub async fn deliver_activity_http(
     } else {
         anyhow::bail!("deliver failed: {}", status)
     }
+}
+
+/// 根据 URL 选择 HTTP/HTTPS 连接器，并按退避策略进行重试
+pub async fn deliver_activity(cfg: &AppConfig, inbox_url: &str, body: &str) -> anyhow::Result<()> {
+    let max_retries = cfg.backoff_max_retries;
+    for attempt in 0..=max_retries {
+        let start = Instant::now();
+        // 选择 connector
+        let is_https = inbox_url.starts_with("https://");
+        let result = if is_https {
+            // https 客户端（webpki 根证书）
+            let https = HttpsConnectorBuilder::new()
+                .with_native_roots()
+                .expect("load native roots")
+                .https_only()
+                .enable_http1()
+                .enable_http2()
+                .build();
+            let client = Client::builder(TokioExecutor::new()).build(https);
+
+            let signer = HmacSha256Signer;
+            let sign = signer.sign(SignInput {
+                method: "post",
+                path_and_query: inbox_url,
+                key_id: &cfg.sign_key_id,
+                private_key_pem: None,
+                shared_secret: Some(&cfg.sign_shared_secret),
+            });
+
+            let req: HyperRequest<Full<Bytes>> = HyperRequest::post(inbox_url)
+                .header(http::header::CONTENT_TYPE, "application/activity+json")
+                .header(http::header::DATE, sign.date)
+                .header(
+                    http::header::HeaderName::from_static("signature"),
+                    sign.signature,
+                )
+                .body(Full::from(Bytes::from(body.to_owned())))?;
+            let resp = client.request(req).await;
+            resp.map(|r| (r.status(), start.elapsed()))
+        } else {
+            // http 客户端（明文）
+            let mut http = HttpConnector::new();
+            http.enforce_http(true);
+            let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build(http);
+
+            let signer = HmacSha256Signer;
+            let sign = signer.sign(SignInput {
+                method: "post",
+                path_and_query: inbox_url,
+                key_id: &cfg.sign_key_id,
+                private_key_pem: None,
+                shared_secret: Some(&cfg.sign_shared_secret),
+            });
+
+            let req: HyperRequest<Full<Bytes>> = HyperRequest::post(inbox_url)
+                .header(http::header::CONTENT_TYPE, "application/activity+json")
+                .header(http::header::DATE, sign.date)
+                .header(
+                    http::header::HeaderName::from_static("signature"),
+                    sign.signature,
+                )
+                .body(Full::from(Bytes::from(body.to_owned())))?;
+            let resp = client.request(req).await;
+            resp.map(|r| (r.status(), start.elapsed()))
+        };
+
+        match result {
+            Ok((status, elapsed)) if status.is_success() || status == HyperStatus::ACCEPTED => {
+                info!(target:"delivery", %inbox_url, elapsed_ms=%elapsed.as_millis(), status=%status.as_u16(), attempt, "deliver ok");
+                return Ok(());
+            }
+            Ok((status, elapsed)) => {
+                info!(target:"delivery", %inbox_url, elapsed_ms=%elapsed.as_millis(), status=%status.as_u16(), attempt, "deliver failed, retrying if allowed");
+            }
+            Err(e) => {
+                info!(target:"delivery", %inbox_url, attempt, error=%format!("{e:#}").as_str(), "deliver error, retrying if allowed");
+            }
+        }
+
+        if attempt < max_retries {
+            // 指数退避：base * 2^attempt，上限为 max
+            let pow = 1u64 << (attempt.min(16) as u32);
+            let base = cfg.backoff_base_ms.saturating_mul(pow);
+            let delay_ms = base.min(cfg.backoff_max_ms);
+            sleep(Duration::from_millis(delay_ms)).await;
+        }
+    }
+
+    anyhow::bail!("deliver exhausted retries")
 }

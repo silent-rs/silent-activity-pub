@@ -3,9 +3,7 @@ use serde_json::{json, Value};
 use silent::{header, Request, Response, Result, StatusCode};
 
 use crate::config::AppConfig;
-use crate::federation::delivery::{
-    build_delivery_from_config, deliver_activity_http, OutboundDelivery,
-};
+use crate::federation::delivery::{build_delivery_from_config, OutboundDelivery};
 
 #[silent_openapi::endpoint(
     summary = "获取 Outbox",
@@ -64,7 +62,9 @@ pub async fn outbox_post(mut req: Request) -> Result<Response> {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
     {
-        let _ = deliver_activity_http(cfg, &body.inbox, &activity_str).await;
+        // 根据 URL 自适应 HTTP/HTTPS，并带重试
+        let _ =
+            crate::federation::delivery::deliver_activity(cfg, &body.inbox, &activity_str).await;
     } else {
         let delivery = build_delivery_from_config(cfg);
         let _ = delivery.post_activity(&body.inbox, &activity_str).await;
