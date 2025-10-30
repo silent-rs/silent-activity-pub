@@ -48,6 +48,20 @@ pub static DEDUP_COUNTER: Lazy<IntCounterVec> = Lazy::new(|| {
     c
 });
 
+pub static QUEUE_COUNTER: Lazy<IntCounterVec> = Lazy::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new("delivery_queue_total", "delivery queue counters"),
+        &["backend", "event"], // event: enqueued/dequeued/dropped
+    )
+    .unwrap();
+    REGISTRY.register(Box::new(c.clone())).ok();
+    c
+});
+
+pub fn record_queue(backend: &str, event: &str) {
+    QUEUE_COUNTER.with_label_values(&[backend, event]).inc();
+}
+
 pub fn record_delivery(scheme: &str, ok: bool, code: u16, elapsed_ms: u64) {
     let result = if ok { "ok" } else { "error" };
     DELIVERY_COUNTER

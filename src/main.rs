@@ -1,7 +1,6 @@
 use silent::prelude::Route;
 use silent::Server;
 use silent_openapi::{OpenApiDoc, RouteOpenApiExt, SwaggerUiHandler, SwaggerUiOptions};
-use std::env;
 use std::net::SocketAddr;
 
 mod activity;
@@ -17,13 +16,14 @@ mod utils;
 async fn main() -> anyhow::Result<()> {
     observability::init_tracing();
 
-    // 读取监听地址
-    let addr: SocketAddr = env::var("AP_LISTEN")
-        .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+    let cfg = config::AppConfig::load();
+    // 读取监听地址（来自配置文件/环境）
+    let addr: SocketAddr = cfg
+        .listen_addr
         .parse()
-        .expect("invalid AP_LISTEN");
-
-    let cfg = config::AppConfig::load_from_env();
+        .expect("invalid listen addr in config");
+    // 初始化出站投递队列（内存）
+    federation::queue::init(cfg.clone());
     let routes = federation::routes::build_routes(cfg);
 
     // 基于业务路由生成 OpenAPI，创建 Swagger UI Handler 并作为路由挂载到 /docs

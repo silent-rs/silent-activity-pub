@@ -178,6 +178,7 @@ open http://127.0.0.1:8080/docs || true
   - 签名算法动态选择：由 `AP_SIGN_ALG=hmac|rsa|ed25519` 与 `AP_SIGN_PRIV_KEY_PATH=<PEM>` 控制；缺省回退到 HMAC
   - 每次投递自动附带 `Idempotency-Key`（正文 SHA256 的 Base64）
   - 支持 http/https 通道；指数退避重试由 `AP_BACKOFF_*` 参数控制
+  - 支持“内存/持久化”出站队列：默认内存队列（tokio mpsc），可切换 sled 后端（简易持久化）
 
 - 相关环境变量
   - `AP_SIGN_ENABLE=true` 开启签名（默认仅在需要的端点使用）
@@ -187,6 +188,11 @@ open http://127.0.0.1:8080/docs || true
   - `AP_SIGN_SECRET=your-secret` HMAC 共享密钥
   - `AP_SIGN_MAX_SKEW_SEC=300` 允许的时间偏移（用于 Date/created/expires）
   - `AP_BACKOFF_BASE_MS=500`、`AP_BACKOFF_MAX_MS=10000`、`AP_BACKOFF_MAX_RETRIES=3` 退避策略
+  - `AP_HTTP_TIMEOUT_MS=10000` 出站请求超时（毫秒，默认 10s）
+  - `AP_QUEUE_BACKEND=memory|sled` 出站队列后端（默认 memory）
+  - `AP_QUEUE_CAP=1000` 内存队列容量（memory 后端有效）
+  - `AP_QUEUE_WORKERS=2` 内存队列并发 worker 数（1–16，memory 后端有效）
+  - `AP_QUEUE_POLL_MS=500` sled 队列轮询间隔（毫秒，sled 后端有效）
 
 - 错误响应规范
   - 401 UNAUTHORIZED：
@@ -198,12 +204,50 @@ open http://127.0.0.1:8080/docs || true
 
 ## 配置与运行
 
-- 端口与地址：默认监听 `0.0.0.0:8080`（视实现为准）
+- 端口与地址：默认监听 `0.0.0.0:8080`（可在配置中调整）
 - 日志等级：通过环境变量 `RUST_LOG` 控制，推荐 `info`/`debug`
 - 时间与 ID：
   - ID 一律使用 `scru128` 生成，高可用且可排序
   - 时间戳使用 `chrono::Local::now().naive_local()`，统一本地时间
-- 运行参数：建议通过 `.env` 或配置文件集中管理（示例：`AP_BASE_URL`、`AP_SIGNING_KEY` 等）
+- 配置优先级：TOML 配置文件 > 环境变量覆盖 > 内置默认值
+- 配置文件路径：默认 `config/app.toml`，可通过环境变量 `AP_CONFIG` 指定
+
+### 配置文件示例（config/app.toml）
+
+```toml
+# 服务
+base_url = "http://127.0.0.1:8080"
+listen_addr = "0.0.0.0:8080"
+
+# 签名
+sign_enable = false
+sign_key_id = "local#main"
+sign_shared_secret = ""
+sign_max_skew_sec = 300
+sign_alg = "hmac"        # hmac|rsa|ed25519
+sign_priv_key_path = ""   # 当 rsa/ed25519 时必需
+
+# 退避重试
+backoff_base_ms = 500
+backoff_max_ms = 10000
+backoff_max_retries = 3
+
+# 去重
+dedup_backend = "memory"  # memory|sled
+sled_path = "./data/dedup.sled"
+
+# 出站 HTTP
+http_timeout_ms = 10000
+delivery_http = false      # true 则实际发送 HTTP/HTTPS，否则仅日志
+
+# 出站队列
+queue_backend = "memory"   # memory|sled
+queue_cap = 1000           # 仅 memory 有效
+queue_workers = 2          # 仅 memory 有效
+queue_poll_ms = 500        # 仅 sled 有效
+```
+
+> 可以使用环境变量覆盖 TOML 中的配置（如 `AP_BASE_URL`、`AP_LISTEN` 等）。
 
 > 安全提示：私钥与签名材料应保存在专用密钥管理中（如 KMS 或受限文件权限），严禁提交到仓库。
 
@@ -323,6 +367,15 @@ refactor(db): 优化对象存储抽象
   - `delivery_duration_ms{scheme}`：出站投递耗时直方图（单位 ms）
   - `inbound_total{endpoint, result}`：入站处理计数（endpoint: inbox；result: ok/unauthorized/duplicate）
   - `dedup_total{backend, result}`：去重命中统计（backend: memory/sled；result: hit/miss）
+  - `delivery_queue_total{backend, event}`：队列事件计数（backend: memory/sled；event: enqueued/dequeued/dropped）
+  - `delivery_queue_depth`：当前队列深度（Gauge）
+
+### 出站队列与 Outbox 行为
+
+- `POST /users/<name>/outbox` 行为为“入队”：
+  - 请求体：`{"inbox":"<url>","activity":{...}}`
+  - 正常：返回 `{ "status": "queued" }`
+  - 队列已满：返回 503 + `{ "error": "queue_full" }`
 
 ## 计划（Plan）
 

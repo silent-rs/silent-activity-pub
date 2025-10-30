@@ -78,12 +78,18 @@
 
 ---
 
-## P1 · 投递集成（outbox POST 占位）
+## P1 · 投递与队列（进行中）
 
-- Outbox POST 占位
-  - 内容：`POST /users/<name>/outbox`，请求体 `{ inbox, activity }`，调用出站投递（日志）
-  - 完成标准：返回 `{ status: "queued" }`，日志包含签名信息
-  - 分支建议：`feature/phase-vii-b-signatures`
+- 出站队列（已完成基础版）
+  - 内存队列（tokio mpsc）+ 多 worker；队列指标 `delivery_queue_*`
+  - sled 后端（可选）：轮询消费，成功删除并前进 head
+  - 配置：`AP_QUEUE_BACKEND=memory|sled`、`AP_QUEUE_CAP`、`AP_QUEUE_WORKERS`、`AP_QUEUE_POLL_MS`
+  - 入口：`POST /users/<name>/outbox` 入队，队列满 503 返回
+
+- 后续增强（待办）
+  - 失败策略：最大重试次数、失败队列（DLQ）与重排
+  - 重试指标：重试次数分布、失败原因分类
+  - 网络增强：代理、连接池、证书校验策略与可配置超时（已提供 AP_HTTP_TIMEOUT_MS）
 
 ## 注意
 

@@ -57,10 +57,12 @@
   - 入站 hs2019（RSA/Ed25519）验签，完整 Signature 解析（含 headers/created/expires）
   - 统一错误响应与 `WWW-Authenticate: Signature ...`
   - 出站签名算法动态选择（HMAC/RSA/Ed25519）
+  - 出站投递队列：内存队列（多 worker）与 sled 简易持久化队列；出站请求超时（AP_HTTP_TIMEOUT_MS）
 - 待办：
   - 投递队列与重试策略完善（当前为直接重试）
-  - 去重持久化与 TTL 清理策略（sled 后端）
+  - 去重持久化与 TTL 清理策略（sled 后端，已提供惰性清理基础）
   - 错误体与安全头的兼容性细化（主流实现）
+  - 队列失败路径细化：最大重试、DLQ、重试次数分布指标
 - 验收：
   - 按目标实例完成签名、回源校验与指数退避
   - 幂等与去重生效（基于活动 ID）
