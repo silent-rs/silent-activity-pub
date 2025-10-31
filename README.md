@@ -252,6 +252,23 @@ cp config/app.example.toml config/app.toml
 RUST_LOG=info cargo run --bin silent-activity-pub
 ```
 
+### MVP 快速验证脚本
+
+提供 `scripts/verify_mvp.sh` 进行端点与 HEAD 回退验证：
+
+```bash
+# 使用默认 BASE_URL 与用户名
+bash scripts/verify_mvp.sh
+
+# 或指定 BASE_URL 与用户名（或用环境变量 BASE_URL/NAME 覆盖）
+bash scripts/verify_mvp.sh http://127.0.0.1:8080 alice
+
+# 脚本参数/行为
+# - 所有请求使用 --max-time（默认 8s，可用 MAX_TIME 覆盖）
+# - 校验 health、.well-known/*、nodeinfo/2.1、users/<name>、users/<name>/outbox
+# - 对 GET 验证 Content-Type，对相应端点执行 HEAD=200 回退检查
+```
+
 > 安全提示：私钥与签名材料应保存在专用密钥管理中（如 KMS 或受限文件权限），严禁提交到仓库。
 
 ---
