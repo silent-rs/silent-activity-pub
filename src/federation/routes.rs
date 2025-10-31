@@ -12,7 +12,10 @@ use crate::federation::discovery::{host_meta, nodeinfo_21, nodeinfo_wellknown, w
 use crate::observability::metrics::metrics_handler;
 
 #[silent_openapi::endpoint(summary = "健康检查", description = "返回服务状态与本地时间")]
-async fn health(_req: Request) -> Result<Response> {
+async fn health(req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     let body = serde_json::json!({
         "status": "ok",
         "time": Local::now().naive_local().to_string(),

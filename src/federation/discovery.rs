@@ -9,6 +9,9 @@ use crate::config::AppConfig;
     description = "根据 acct:* 查询 Actor 入口，自描述链接 rel=self 指向 Actor profile"
 )]
 pub async fn webfinger(mut req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     let params = req.params().clone();
     let Some(subject) = params.get("resource").cloned() else {
         let mut res = Response::json(&json!({ "error": "missing resource" }));
@@ -50,7 +53,10 @@ pub async fn webfinger(mut req: Request) -> Result<Response> {
     summary = "Host-Meta",
     description = "返回 WebFinger 的 LRDD 链接(XML)"
 )]
-pub async fn host_meta(_req: Request) -> Result<Response> {
+pub async fn host_meta(req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     // 简化：固定指向 /.well-known/webfinger
     let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
@@ -70,6 +76,9 @@ pub async fn host_meta(_req: Request) -> Result<Response> {
     description = "返回 NodeInfo 链接列表"
 )]
 pub async fn nodeinfo_wellknown(req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     let cfg: &crate::config::AppConfig = req.get_config_uncheck();
     let href = format!("{}/nodeinfo/2.1", cfg.base_url);
     let body = json!({
@@ -90,7 +99,10 @@ pub async fn nodeinfo_wellknown(req: Request) -> Result<Response> {
     summary = "NodeInfo 2.1",
     description = "返回软件、协议与使用信息(占位)"
 )]
-pub async fn nodeinfo_21(_req: Request) -> Result<Response> {
+pub async fn nodeinfo_21(req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     let body = json!({
         "version": "2.1",
         "software": { "name": "silent-activity-pub", "version": env!("CARGO_PKG_VERSION") },

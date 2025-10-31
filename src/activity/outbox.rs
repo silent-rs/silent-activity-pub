@@ -11,6 +11,9 @@ use crate::federation::queue::{enqueue, DeliveryJob};
     description = "返回 Actor 的 OrderedCollection（占位空集合）"
 )]
 pub async fn outbox(req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     let name: String = req
         .get_path_params("name")
         .unwrap_or_else(|_| "unknown".into());
