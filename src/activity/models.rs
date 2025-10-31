@@ -9,6 +9,9 @@ use crate::config::AppConfig;
     description = "返回 ActivityStreams Person，包含 inbox/outbox 链接"
 )]
 pub async fn actor(req: Request) -> Result<Response> {
+    if *req.method() == http::Method::HEAD {
+        return Ok(Response::empty());
+    }
     let name: String = req
         .get_path_params("name")
         .unwrap_or_else(|_| "unknown".into());
