@@ -48,6 +48,11 @@
   - 验证：`curl -i /.well-known/host-meta`、`curl -s /.well-known/nodeinfo|jq`、`curl -s /nodeinfo/2.1|jq`
   - 分支建议：`feature/discovery-nodeinfo-hostmeta`
 
+- HEAD 回退（GET 命中）
+  - 内容：对 GET 端点在处理函数内短路返回 200 空体（health/webfinger/host-meta/nodeinfo/actor/outbox）
+  - 完成标准：`curl -I` 对上述端点返回 200 且无主体
+  - 状态：完成（PR #9 已合并）
+
 ---
 
 ## P0 · 框架与规范统一
